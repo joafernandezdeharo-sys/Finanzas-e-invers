@@ -44,6 +44,8 @@ npm run build     # genera la versión estática en dist/
 npm run preview   # sirve dist/ localmente
 ```
 
+**Versión en un solo archivo:** `npm run build:single` genera `dist-single/index.html` (copia en `MisFinanzas.html`), que se abre con doble clic sin instalar nada.
+
 La carpeta `dist/` es un sitio estático: se puede publicar gratis en GitHub Pages, Netlify, Vercel, etc.
 
 Para probarla rápido: *Configuración → Cargar datos de ejemplo*.

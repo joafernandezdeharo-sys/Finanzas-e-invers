@@ -13,6 +13,7 @@ import Dolar from './pages/Dolar';
 import Inversiones from './pages/Inversiones';
 import Noticias from './pages/Noticias';
 import Configuracion from './pages/Configuracion';
+import logo from './assets/logo.svg';
 
 const NAV = [
   { to: '/', label: 'Resumen', icon: IconHome },
@@ -44,7 +45,7 @@ export default function App() {
   return (
     <div className="app">
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-        <div className="brand"><img src="./favicon.svg" alt="" />Mis Finanzas</div>
+        <div className="brand"><img src={logo} alt="" />Mis Finanzas</div>
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <Icon />{label}
