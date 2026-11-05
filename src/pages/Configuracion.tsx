@@ -39,6 +39,7 @@ export default function Configuracion() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
   const [newSrc, setNewSrc] = useState({ name: '', url: '' });
+  const [newRule, setNewRule] = useState({ keyword: '', category: settings.expenseCategories[0] ?? '' });
   const set = (patch: Partial<Settings>) => setSettings(patch);
 
   const exportJSON = () => downloadFile(`mis-finanzas-backup-${todayISO()}.json`, JSON.stringify(data, null, 2));
@@ -53,7 +54,7 @@ export default function Configuracion() {
     }
   };
 
-  const counts = `${data.transactions.length} movimientos · ${data.savings.length} aportes · ${data.goals.length} metas · ${data.dollarOps.length} operaciones de dólar · ${data.investments.length} inversiones`;
+  const counts = `${data.transactions.length} movimientos (${data.transactions.filter((t) => t.importId).length} importados de ${data.imports.length} archivos) · ${data.savings.length} aportes · ${data.goals.length} metas · ${data.dollarOps.length} operaciones de dólar · ${data.investments.length} inversiones`;
 
   return (
     <>
@@ -137,6 +138,41 @@ export default function Configuracion() {
           </form>
         </Card>
       </div>
+
+      <Card title="Reglas de categorías automáticas" subtitle="Cuando importás un resumen, si la descripción contiene la palabra clave se asigna esa categoría. Se crean solas cuando cambiás una categoría al importar.">
+        {settings.categoryRules.length ? (
+          <div className="table-wrap" style={{ maxHeight: 320, overflowY: 'auto' }}>
+            <table>
+              <thead><tr><th>Si la descripción contiene</th><th>Categoría</th><th>Aplica a</th><th /></tr></thead>
+              <tbody>
+                {settings.categoryRules.map((r, i) => (
+                  <tr key={`${r.keyword}-${i}`}>
+                    <td><code>{r.keyword}</code></td>
+                    <td>{r.category}</td>
+                    <td className="muted small">{r.type === 'ingreso' ? 'Ingresos' : r.type === 'gasto' ? 'Gastos' : 'Ambos'}</td>
+                    <td className="actions"><button className="btn-icon" aria-label="Quitar regla" onClick={() => set({ categoryRules: settings.categoryRules.filter((_, j) => j !== i) })}><IconTrash /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="small muted" style={{ marginTop: 0 }}>Todavía no tenés reglas propias. Igual la app reconoce sola cientos de comercios comunes (Coto, Carrefour, YPF, Netflix, Edenor, AFIP, Rappi…).</p>}
+        <form className="filters" style={{ marginTop: 12 }} onSubmit={(e) => {
+          e.preventDefault();
+          const keyword = newRule.keyword.trim().toLowerCase();
+          if (!keyword) return;
+          const type = settings.incomeCategories.includes(newRule.category) && !settings.expenseCategories.includes(newRule.category) ? 'ingreso' as const : 'gasto' as const;
+          set({ categoryRules: [{ keyword, category: newRule.category, type }, ...settings.categoryRules.filter((r) => r.keyword !== keyword)] });
+          setNewRule({ ...newRule, keyword: '' });
+        }}>
+          <input className="input" style={{ maxWidth: 240 }} value={newRule.keyword} onChange={(e) => setNewRule({ ...newRule, keyword: e.target.value })} placeholder="Palabra clave (ej. gimnasio)" />
+          <select className="select" style={{ width: 'auto' }} value={newRule.category} onChange={(e) => setNewRule({ ...newRule, category: e.target.value })}>
+            <optgroup label="Gastos">{settings.expenseCategories.map((c) => <option key={`g-${c}`}>{c}</option>)}</optgroup>
+            <optgroup label="Ingresos">{settings.incomeCategories.map((c) => <option key={`i-${c}`}>{c}</option>)}</optgroup>
+          </select>
+          <button className="btn" type="submit"><IconPlus width={16} />Agregar regla</button>
+        </form>
+      </Card>
 
       <Card title="Datos y backup" subtitle={counts}>
         <p className="small muted" style={{ marginTop: 0 }}>

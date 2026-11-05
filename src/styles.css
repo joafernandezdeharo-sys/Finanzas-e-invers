@@ -194,7 +194,7 @@ th.sortable:hover { color: var(--text); }
 td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--surface-2); }
-td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td.actions { width: 1%; white-space: nowrap; text-align: right; }
 tfoot td { font-weight: 650; border-top: 2px solid var(--border); }
 
@@ -274,3 +274,18 @@ tfoot td { font-weight: 650; border-top: 2px solid var(--border); }
   .filters .field { min-width: 0; flex: 1 1 140px; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- importar ---------- */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
+  padding: 36px 20px; border: 2px dashed var(--border); cursor: pointer; color: var(--text-2); box-shadow: none;
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.alert.good { background: var(--good-soft); color: var(--good); }
+details summary { list-style: revert; }
+a.btn:hover { text-decoration: none; }
+@media (max-width: 560px) {
+  .stats-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stats-compact .card { padding: 12px; }
+  .stats-compact .stat-value { font-size: 1.1rem; }
+}

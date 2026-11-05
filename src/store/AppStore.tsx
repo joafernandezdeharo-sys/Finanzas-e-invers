@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { AppData, CollectionKey, Settings } from '../types';
+import type { AppData, CategoryRule, CollectionKey, ImportBatch, Settings, Transaction } from '../types';
 import { DEFAULT_SETTINGS, emptyData } from '../lib/defaults';
 import { uid } from '../lib/util';
 
@@ -15,6 +15,13 @@ interface Store {
   setSettings: (patch: Partial<Settings>) => void;
   replaceAll: (data: AppData) => void;
   reset: () => void;
+  /** Agrega los movimientos de un resumen importado (se acumulan con los existentes) */
+  importBatch: (batch: Omit<ImportBatch, 'id'>, txs: Omit<Transaction, 'id' | 'importId'>[], newRules: CategoryRule[]) => string;
+  /** Borra un resumen importado y todos sus movimientos */
+  removeImport: (id: string) => void;
+  /** Borra la memoria de importaciones: todos los movimientos importados y el historial de archivos */
+  clearImports: () => void;
+  storageError: string | null;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -32,6 +39,7 @@ export const normalize = (raw: unknown): AppData => {
     savings: arr(r.savings),
     dollarOps: arr(r.dollarOps),
     investments: arr(r.investments),
+    imports: arr(r.imports),
     settings: { ...DEFAULT_SETTINGS, ...(r.settings ?? {}) },
   };
 };
@@ -47,12 +55,23 @@ const load = (): AppData => {
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(load);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
+  // pedimos al navegador que no borre los datos de la app aunque le falte espacio
+  useEffect(() => {
+    navigator.storage?.persist?.().catch(() => {});
+  }, []);
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      /* almacenamiento no disponible */
+      setStorageError(null);
+    } catch (e) {
+      setStorageError(
+        (e as Error).name === 'QuotaExceededError'
+          ? 'El navegador se quedó sin espacio para guardar tus datos. Exportá un backup y borrá importaciones viejas.'
+          : 'No se pudieron guardar los datos en este navegador (¿modo incógnito?).',
+      );
     }
   }, [data]);
 
@@ -80,12 +99,41 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
   }, []);
 
+  const importBatch = useCallback<Store['importBatch']>((batch, txs, newRules) => {
+    const id = uid();
+    setData((d) => {
+      const rules = [...d.settings.categoryRules];
+      for (const r of newRules) {
+        const i = rules.findIndex((x) => x.keyword.toLowerCase() === r.keyword.toLowerCase());
+        if (i >= 0) rules[i] = r; else rules.unshift(r);
+      }
+      // si el resumen trae categorías nuevas, las sumamos a la configuración
+      const inc = new Set(d.settings.incomeCategories), exp = new Set(d.settings.expenseCategories);
+      txs.forEach((t) => (t.type === 'ingreso' ? inc : exp).add(t.category));
+      return {
+        ...d,
+        transactions: [...d.transactions, ...txs.map((t) => ({ ...t, id: uid(), importId: id }))],
+        imports: [{ ...batch, id }, ...d.imports],
+        settings: { ...d.settings, categoryRules: rules, incomeCategories: [...inc], expenseCategories: [...exp] },
+      };
+    });
+    return id;
+  }, []);
+
+  const removeImport = useCallback((id: string) => {
+    setData((d) => ({ ...d, transactions: d.transactions.filter((t) => t.importId !== id), imports: d.imports.filter((b) => b.id !== id) }));
+  }, []);
+
+  const clearImports = useCallback(() => {
+    setData((d) => ({ ...d, transactions: d.transactions.filter((t) => !t.importId), imports: [] }));
+  }, []);
+
   const replaceAll = useCallback((d: AppData) => setData(normalize(d)), []);
   const reset = useCallback(() => setData(emptyData()), []);
 
   const value = useMemo(
-    () => ({ data, add, update, remove, setSettings, replaceAll, reset }),
-    [data, add, update, remove, setSettings, replaceAll, reset],
+    () => ({ data, add, update, remove, setSettings, replaceAll, reset, importBatch, removeImport, clearImports, storageError }),
+    [data, add, update, remove, setSettings, replaceAll, reset, importBatch, removeImport, clearImports, storageError],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

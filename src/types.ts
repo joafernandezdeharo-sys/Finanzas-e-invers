@@ -11,6 +11,28 @@ export interface Transaction {
   category: string;
   description: string;
   account: string;
+  source?: string; // banco / app de donde se importó (ej. "Mercado Pago")
+  importId?: string; // lote de importación al que pertenece
+}
+
+/** Un archivo de resumen importado */
+export interface ImportBatch {
+  id: string;
+  fileName: string;
+  source: string;
+  importedAt: string; // ISO datetime
+  count: number;
+  skipped: number; // duplicados omitidos
+  from: string; // fecha del primer movimiento
+  to: string; // fecha del último movimiento
+  totalIn: number; // en ARS
+  totalOut: number; // en ARS
+}
+
+export interface CategoryRule {
+  keyword: string; // texto a buscar en la descripción (sin distinguir mayúsculas)
+  category: string;
+  type?: TxType; // si se indica, la regla solo aplica a ese tipo
 }
 
 export interface SavingsGoal {
@@ -89,6 +111,7 @@ export interface Settings {
   accounts: string[];
   newsSources: NewsSource[];
   monthlyBudget: number; // en moneda de visualización, 0 = sin presupuesto
+  categoryRules: CategoryRule[];
 }
 
 export interface AppData {
@@ -98,7 +121,8 @@ export interface AppData {
   savings: SavingsMovement[];
   dollarOps: DollarOperation[];
   investments: Investment[];
+  imports: ImportBatch[];
   settings: Settings;
 }
 
-export type CollectionKey = 'transactions' | 'goals' | 'savings' | 'dollarOps' | 'investments';
+export type CollectionKey = 'transactions' | 'goals' | 'savings' | 'dollarOps' | 'investments' | 'imports';

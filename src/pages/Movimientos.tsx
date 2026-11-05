@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useStore } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
 import { Card, Empty, MonthPicker, PageHead, Segmented, Stat } from '../components/ui';
 import { TxForm } from '../components/TxForm';
-import { IconDownload, IconEdit, IconPlus, IconTrash } from '../components/Icons';
+import { IconDownload, IconEdit, IconPlus, IconTrash, IconUpload } from '../components/Icons';
 import { MoneyTooltip, axisMoney, useThemeColors } from '../components/charts';
 import { currentMonth, downloadFile, formatDate, formatMoney, monthKey, monthLabel, sum, toCSV } from '../lib/util';
 import type { Transaction } from '../types';
@@ -18,7 +19,9 @@ export default function Movimientos() {
   const colors = useThemeColors();
   const cur = settings.displayCurrency;
 
-  const [month, setMonth] = useState(currentMonth());
+  const [params] = useSearchParams();
+  const [month, setMonth] = useState(params.get('mes') ?? currentMonth());
+  const [source, setSource] = useState('');
   const [type, setType] = useState<'todos' | 'ingreso' | 'gasto'>('todos');
   const [category, setCategory] = useState('');
   const [account, setAccount] = useState('');
@@ -42,6 +45,7 @@ export default function Movimientos() {
         (!category || t.category === category) &&
         (!account || t.account === account) &&
         (!currency || t.currency === currency) &&
+        (!source || (t.source || 'Carga manual') === source) &&
         (!term || `${t.description} ${t.category} ${t.account}`.toLowerCase().includes(term)))
       .sort((a, b) => {
         const d = sort.dir;
@@ -49,7 +53,7 @@ export default function Movimientos() {
         if (sort.key === 'category') return a.category.localeCompare(b.category) * d;
         return a.date.localeCompare(b.date) * d;
       });
-  }, [transactions, month, type, category, account, currency, q, sort, toDisplay]);
+  }, [transactions, month, type, category, account, currency, source, q, sort, toDisplay]);
 
   const income = sum(filtered.filter((t) => t.type === 'ingreso').map((t) => toDisplay(t.amount, t.currency)));
   const expense = sum(filtered.filter((t) => t.type === 'gasto').map((t) => toDisplay(t.amount, t.currency)));
@@ -65,17 +69,19 @@ export default function Movimientos() {
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : '');
 
   const exportCSV = () => {
-    const rows = [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Cuenta', 'Moneda', 'Monto'],
-      ...filtered.map((t) => [t.date, t.type, t.category, t.description, t.account, t.currency, t.amount])];
+    const rows = [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Cuenta', 'Origen', 'Moneda', 'Monto'],
+      ...filtered.map((t) => [t.date, t.type, t.category, t.description, t.account, t.source ?? '', t.currency, t.amount])];
     downloadFile(`movimientos-${month || 'todos'}.csv`, '﻿' + toCSV(rows), 'text/csv');
   };
 
-  const clearFilters = () => { setType('todos'); setCategory(''); setAccount(''); setCurrency(''); setQ(''); };
+  const clearFilters = () => { setType('todos'); setCategory(''); setAccount(''); setCurrency(''); setSource(''); setQ(''); };
+  const sources = useMemo(() => [...new Set(transactions.map((t) => t.source || 'Carga manual'))].sort(), [transactions]);
 
   return (
     <>
       <PageHead title="Ingresos y gastos" subtitle="El día a día de tu plata, separado por mes.">
         <MonthPicker value={month} onChange={setMonth} months={months} />
+        <Link to="/importar" className="btn"><IconUpload width={16} />Importar resumen</Link>
         <button className="btn btn-primary" onClick={() => setEditing('new')}><IconPlus width={16} />Nuevo movimiento</button>
       </PageHead>
 
@@ -127,6 +133,12 @@ export default function Movimientos() {
             <option value="ARS">Solo ARS</option>
             <option value="USD">Solo USD</option>
           </select>
+          {sources.length > 1 && (
+            <select className="select" style={{ width: 'auto' }} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origen">
+              <option value="">Todos los orígenes</option>
+              {sources.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          )}
           <input className="input" style={{ width: 200 }} placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="btn btn-sm" onClick={clearFilters}>Limpiar filtros</button>
         </div>
@@ -150,7 +162,7 @@ export default function Movimientos() {
                     <td className="num">{formatDate(t.date)}</td>
                     <td><span className={`badge ${t.type === 'ingreso' ? 'good' : ''}`}>{t.category}</span></td>
                     <td>{t.description || <span className="muted">—</span>}</td>
-                    <td className="muted">{t.account}</td>
+                    <td className="muted">{t.account}{t.source && <div className="small">{t.source}</div>}</td>
                     <td className="r muted">{formatMoney(t.amount, t.currency)}</td>
                     <td className={`r ${t.type === 'ingreso' ? 'good' : ''}`}>
                       {t.type === 'ingreso' ? '+' : '−'}{formatMoney(toDisplay(t.amount, t.currency), cur)}

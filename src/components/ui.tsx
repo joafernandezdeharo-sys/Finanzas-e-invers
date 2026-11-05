@@ -67,7 +67,8 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
 export function Field({ label, hint, children, full }: { label: string; hint?: ReactNode; children: ReactNode; full?: boolean }) {
   return (
     <label className={`field ${full ? 'full' : ''}`}>
-      <span>{label}</span>
+      {/* evitamos que tocar el título active el primer botón del control */}
+      <span onClick={(e) => e.preventDefault()}>{label}</span>
       {children}
       {hint && <small>{hint}</small>}
     </label>

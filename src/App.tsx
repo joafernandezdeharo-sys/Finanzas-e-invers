@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './store/AppStore';
 import { useLive } from './store/LiveData';
 import { CurrencyToggle } from './components/ui';
-import { IconChart, IconDollar, IconHome, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings } from './components/Icons';
+import { IconChart, IconDollar, IconHistory, IconHome, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings, IconUpload } from './components/Icons';
 import { dollarLabel } from './lib/defaults';
 import { formatMoney } from './lib/util';
 import Dashboard from './pages/Dashboard';
@@ -13,11 +13,15 @@ import Dolar from './pages/Dolar';
 import Inversiones from './pages/Inversiones';
 import Noticias from './pages/Noticias';
 import Configuracion from './pages/Configuracion';
+import Importar from './pages/Importar';
+import Historial from './pages/Historial';
 import logo from './assets/logo.svg';
 
 const NAV = [
   { to: '/', label: 'Resumen', icon: IconHome },
   { to: '/movimientos', label: 'Ingresos y gastos', icon: IconList },
+  { to: '/importar', label: 'Importar resúmenes', icon: IconUpload },
+  { to: '/historial', label: 'Historial', icon: IconHistory },
   { to: '/ahorro', label: 'Ahorro', icon: IconPiggy },
   { to: '/dolar', label: 'Dólar', icon: IconDollar },
   { to: '/inversiones', label: 'Inversiones', icon: IconChart },
@@ -28,7 +32,7 @@ const NAV = [
 const TICKER_KINDS = ['oficial', 'blue', 'bolsa', 'contadoconliqui', 'cripto', 'tarjeta'] as const;
 
 export default function App() {
-  const { data, setSettings } = useStore();
+  const { data, setSettings, storageError } = useStore();
   const { settings } = data;
   const live = useLive();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,9 +83,12 @@ export default function App() {
         </header>
 
         <main className="content">
+          {storageError && <div className="alert bad">{storageError}</div>}
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/movimientos" element={<Movimientos />} />
+            <Route path="/importar" element={<Importar />} />
+            <Route path="/historial" element={<Historial />} />
             <Route path="/ahorro" element={<Ahorro />} />
             <Route path="/dolar" element={<Dolar />} />
             <Route path="/inversiones" element={<Inversiones />} />
