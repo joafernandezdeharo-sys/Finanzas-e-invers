@@ -3,24 +3,23 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { useStore } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
 import { Card, Empty, Field, Modal, NumberInput, PageHead, Stat } from '../components/ui';
-import { IconEdit, IconExternal, IconPlus, IconRefresh, IconTrash } from '../components/Icons';
+import { IconChart, IconEdit, IconExternal, IconPlus, IconRefresh, IconTrash } from '../components/Icons';
 import { MoneyTooltip, useThemeColors } from '../components/charts';
 import { ASSET_TYPES, assetLabel } from '../lib/defaults';
 import { valueInvestment, type Valuation } from '../lib/portfolio';
 import { searchCoins, type CoinSearchResult } from '../services/prices';
+import { yahooPage, yahooSymbol } from '../services/yahoo';
+import { YahooChart } from '../components/YahooChart';
+import { Link } from 'react-router-dom';
 import { formatDate, formatMoney, formatNumber, formatPct, sum, todayISO } from '../lib/util';
 import type { AssetType, Currency, Investment } from '../types';
 
+/** Página de referencia del activo: Yahoo Finance si lo cotiza, si no la ficha del bono en BYMA/Rava */
 const externalLink = (inv: Investment) => {
-  const s = inv.symbol.trim();
-  switch (inv.type) {
-    case 'cripto': return `https://www.coingecko.com/es/monedas/${s.toLowerCase()}`;
-    case 'accion_us': return `https://www.tradingview.com/symbols/${s.toUpperCase()}/`;
-    case 'cedear':
-    case 'accion_ar':
-    case 'bono': return `https://www.tradingview.com/symbols/BCBA-${s.toUpperCase()}/`;
-    default: return null;
-  }
+  const ys = yahooSymbol(inv);
+  if (ys) return { url: yahooPage(ys), label: 'Yahoo Finance' };
+  if (inv.type === 'bono') return { url: `https://www.rava.com/perfil/${encodeURIComponent(inv.symbol.trim().toUpperCase())}`, label: 'Rava Bursátil' };
+  return null;
 };
 
 function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: () => void }) {
@@ -126,6 +125,7 @@ export default function Inversiones() {
   const colors = useThemeColors();
   const cur = settings.displayCurrency;
   const [edit, setEdit] = useState<Investment | 'new' | null>(null);
+  const [chart, setChart] = useState<Investment | null>(null);
   const [typeFilter, setTypeFilter] = useState('');
   const [brokerFilter, setBrokerFilter] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'value', dir: -1 });
@@ -156,11 +156,14 @@ export default function Inversiones() {
 
   return (
     <>
-      <PageHead title="Inversiones" subtitle="Tu cartera con precios en vivo de CoinGecko, BYMA (data912) y Finnhub.">
+      <PageHead title="Inversiones" subtitle={settings.yahooProxyUrl ? 'Tu cartera con precios en vivo de Yahoo Finance (bonos: BYMA).' : 'Tu cartera con precios en vivo de BYMA y CoinGecko.'}>
         <button className="btn" onClick={live.refresh} disabled={live.loading}><IconRefresh width={16} />Actualizar precios</button>
         <button className="btn btn-primary" onClick={() => setEdit('new')}><IconPlus width={16} />Nueva inversión</button>
       </PageHead>
 
+      {!settings.yahooProxyUrl && investments.some((i) => yahooSymbol(i)) && (
+        <div className="alert">Para cotizar tus inversiones con <b>Yahoo Finance</b> conectá el puente gratuito en <Link to="/fuentes">Fuentes de datos</Link>. Mientras tanto se usan BYMA (vía data912) y CoinGecko.</div>
+      )}
       {live.quotesErrors.length > 0 && <div className="alert bad">Algunas fuentes no respondieron: {live.quotesErrors.join(' · ')}</div>}
 
       <div className="grid grid-4">
@@ -261,7 +264,8 @@ export default function Inversiones() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <b>{v.inv.type === 'plazo_fijo' ? (v.inv.name || 'Plazo fijo') : v.inv.symbol.toUpperCase()}</b>
                           <span className="badge">{assetLabel(v.inv.type)}</span>
-                          {link && <a href={link} target="_blank" rel="noreferrer" className="btn-icon" aria-label="Ver en sitio externo"><IconExternal /></a>}
+                          {yahooSymbol(v.inv) && <button className="btn-icon" aria-label="Ver gráfico" title="Ver gráfico histórico" onClick={() => setChart(v.inv)}><IconChart /></button>}
+                          {link && <a href={link.url} target="_blank" rel="noreferrer" className="btn-icon" aria-label={`Ver en ${link.label}`} title={`Ver en ${link.label}`}><IconExternal /></a>}
                         </div>
                         <div className="small muted">
                           {v.inv.type !== 'plazo_fijo' && v.inv.name ? `${v.inv.name} · ` : ''}{formatDate(v.inv.buyDate)}{v.inv.broker ? ` · ${v.inv.broker}` : ''}
@@ -298,10 +302,16 @@ export default function Inversiones() {
           </div>
         ) : <Empty title="Tu cartera está vacía">Agregá CEDEARs, acciones, bonos, cripto, plazos fijos o FCIs.</Empty>}
         <p className="small muted" style={{ marginBottom: 0 }}>
-          Los resultados se calculan convirtiendo todo a {cur} con el dólar elegido en Configuración. Para cotizar acciones de EE.UU. que no estén en data912 podés cargar una API key gratuita de Finnhub.
+          Los resultados se calculan convirtiendo todo a {cur} con el dólar elegido en Configuración. Debajo de cada precio figura su fuente; el detalle de todas las fuentes está en <Link to="/fuentes">Fuentes de datos</Link>.
         </p>
       </Card>
 
+      {chart && (
+        <Modal title={`${chart.symbol.toUpperCase()}${chart.name ? ` · ${chart.name}` : ''}`} onClose={() => setChart(null)}>
+          <YahooChart proxy={settings.yahooProxyUrl} symbol={yahooSymbol(chart)!} prefix={live.quotes[chart.id]?.currency === 'USD' ? 'US$ ' : '$ '} />
+          <div className="modal-foot"><a className="btn btn-sm" href={yahooPage(yahooSymbol(chart)!)} target="_blank" rel="noreferrer">Ver en Yahoo Finance <IconExternal width={12} height={12} /></a></div>
+        </Modal>
+      )}
       {edit && <InvestmentForm initial={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
     </>
   );

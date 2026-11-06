@@ -6,6 +6,7 @@ import { Card, Empty, Field, Modal, NumberInput, PageHead, Segmented, Stat } fro
 import { IconEdit, IconPlus, IconTrash } from '../components/Icons';
 import { MoneyTooltip, useThemeColors } from '../components/charts';
 import { fetchDollarHistory, type DollarHistoryPoint } from '../services/dolar';
+import { BCRA_IDS, fetchBcraVariables, type BcraVariable } from '../services/bcra';
 import { DOLLAR_KINDS, dollarLabel } from '../lib/defaults';
 import { formatDate, formatMoney, formatNumber, formatPct, sum, todayISO } from '../lib/util';
 import type { DollarKind, DollarOperation } from '../types';
@@ -94,6 +95,8 @@ export default function Dolar() {
   const [history, setHistory] = useState<DollarHistoryPoint[]>([]);
   const [histError, setHistError] = useState('');
   const [edit, setEdit] = useState<DollarOperation | 'new' | null>(null);
+  const [bcra, setBcra] = useState<Map<number, BcraVariable> | null>(null);
+  useEffect(() => { fetchBcraVariables().then(setBcra).catch(() => setBcra(null)); }, []);
   const [calc, setCalc] = useState<{ amount: number | null; from: 'ARS' | 'USD' }>({ amount: 1000, from: 'USD' });
 
   useEffect(() => {
@@ -151,8 +154,27 @@ export default function Dolar() {
           </button>
         ))}
       </div>
+      {bcra && (
+        <Card title="Cotización oficial del Banco Central" subtitle={<>Fuente oficial: <a href="https://www.bcra.gob.ar/PublicacionesEstadisticas/Tipos_de_cambios.asp" target="_blank" rel="noreferrer">BCRA</a> · valores de cierre del último día hábil</>}>
+          <div className="grid grid-3">
+            {[{ id: BCRA_IDS.mayorista, label: 'Mayorista de referencia (Com. A 3500)' }, { id: BCRA_IDS.minorista, label: 'Minorista promedio de bancos (vendedor)' }].map(({ id, label }) => {
+              const v = bcra.get(id);
+              return v ? (
+                <div key={id} className="stat">
+                  <span className="stat-label">{label}</span>
+                  <span className="stat-value" style={{ fontSize: '1.3rem' }}>{formatMoney(v.value, 'ARS')}</span>
+                  <span className="stat-sub muted">al {formatDate(v.date)}</span>
+                </div>
+              ) : null;
+            })}
+            <div className="small muted" style={{ alignSelf: 'center' }}>
+              El dólar blue no tiene fuente oficial (es un mercado informal). MEP y CCL surgen de la compraventa de bonos en BYMA.
+            </div>
+          </div>
+        </Card>
+      )}
       <p className="small muted" style={{ margin: '-8px 0 0' }}>
-        Fuente: DolarAPI (se actualiza cada {settings.refreshSeconds}s). Tocá una tarjeta para ver su histórico.
+        Cotizaciones en tiempo real: DolarAPI (oficial = Banco Nación; se actualiza cada {settings.refreshSeconds}s). Histórico: ArgentinaDatos. Tocá una tarjeta para ver su histórico.
         {kind !== settings.rateKind && <> <button className="btn btn-sm" onClick={() => setSettings({ rateKind: kind })}>Usar {dollarLabel(kind)} para convertir ARS ↔ USD</button></>}
       </p>
 

@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './store/AppStore';
 import { useLive } from './store/LiveData';
 import { CurrencyToggle } from './components/ui';
-import { IconChart, IconDollar, IconHistory, IconHome, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings, IconUpload } from './components/Icons';
+import { IconChart, IconDollar, IconGlobe, IconHistory, IconHome, IconInfo, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings, IconUpload } from './components/Icons';
 import { dollarLabel } from './lib/defaults';
 import { formatMoney } from './lib/util';
 import Dashboard from './pages/Dashboard';
@@ -15,6 +15,8 @@ import Noticias from './pages/Noticias';
 import Configuracion from './pages/Configuracion';
 import Importar from './pages/Importar';
 import Historial from './pages/Historial';
+import Mercado from './pages/Mercado';
+import Fuentes from './pages/Fuentes';
 import logo from './assets/logo.svg';
 
 const NAV = [
@@ -25,7 +27,9 @@ const NAV = [
   { to: '/ahorro', label: 'Ahorro', icon: IconPiggy },
   { to: '/dolar', label: 'Dólar', icon: IconDollar },
   { to: '/inversiones', label: 'Inversiones', icon: IconChart },
+  { to: '/mercado', label: 'Mercado', icon: IconGlobe },
   { to: '/noticias', label: 'Noticias', icon: IconNews },
+  { to: '/fuentes', label: 'Fuentes de datos', icon: IconInfo },
   { to: '/configuracion', label: 'Configuración', icon: IconSettings },
 ];
 
@@ -92,6 +96,8 @@ export default function App() {
             <Route path="/ahorro" element={<Ahorro />} />
             <Route path="/dolar" element={<Dolar />} />
             <Route path="/inversiones" element={<Inversiones />} />
+            <Route path="/mercado" element={<Mercado />} />
+            <Route path="/fuentes" element={<Fuentes />} />
             <Route path="/noticias" element={<Noticias />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="*" element={<Dashboard />} />

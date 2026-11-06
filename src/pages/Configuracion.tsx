@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore, normalize } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
 import { Card, Field, NumberInput, PageHead, Segmented } from '../components/ui';
@@ -86,12 +87,14 @@ export default function Configuracion() {
           </div>
         </Card>
 
-        <Card title="Conexiones y APIs" subtitle="Las fuentes gratuitas funcionan sin configurar nada.">
+        <Card title="Conexiones y APIs" subtitle={<>Detalle y estado de cada fuente en <Link to="/fuentes">Fuentes de datos</Link>.</>}>
           <div className="list small">
+            <div className="list-row"><span className="live-dot" style={{ background: settings.yahooProxyUrl ? undefined : 'var(--text-3)', animation: settings.yahooProxyUrl ? undefined : 'none' }} /><span style={{ flex: 1 }}><b>Yahoo Finance</b> · inversiones, índices y gráficos {settings.yahooProxyUrl ? '(conectado)' : '(sin conectar)'}</span><Link to="/fuentes" className="small">{settings.yahooProxyUrl ? 'Ver' : 'Conectar'} →</Link></div>
+            <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>BCRA (oficial)</b> · dólar A 3500, reservas, tasas, inflación, UVA</span></div>
             <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>DolarAPI</b> · cotizaciones del dólar en tiempo real</span></div>
             <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>ArgentinaDatos</b> · histórico del dólar</span></div>
-            <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>data912</b> · CEDEARs, acciones, bonos y ONs de BYMA</span></div>
-            <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>CoinGecko</b> · criptomonedas</span></div>
+            <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>BYMA vía data912</b> · bonos y ONs (respaldo de acciones y CEDEARs)</span></div>
+            <div className="list-row"><span className="live-dot" /><span style={{ flex: 1 }}><b>CoinGecko</b> · respaldo de criptomonedas</span></div>
           </div>
           <div className="form-grid" style={{ marginTop: 12 }}>
             <Field label="API key de Finnhub (opcional)" hint={<>Para acciones de EE.UU. Gratis en <a href="https://finnhub.io/register" target="_blank" rel="noreferrer">finnhub.io</a></>}>

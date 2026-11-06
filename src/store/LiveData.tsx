@@ -45,6 +45,8 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   invRef.current = investments;
   const keyRef = useRef(settings.finnhubKey);
   keyRef.current = settings.finnhubKey;
+  const yahooRef = useRef(settings.yahooProxyUrl);
+  yahooRef.current = settings.yahooProxyUrl;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -58,7 +60,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
         })
         .catch((e) => setDollarsError((e as Error).message)),
       invRef.current.length
-        ? fetchQuotes(invRef.current, keyRef.current).then((r) => {
+        ? fetchQuotes(invRef.current, keyRef.current, yahooRef.current).then((r) => {
             setQuotes(r.quotes);
             setQuotesErrors(r.errors);
             setQuotesUpdated(new Date());
@@ -81,12 +83,12 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const invSignature = investments.map((i) => `${i.type}:${i.symbol}`).join('|');
   useEffect(() => {
     if (!invRef.current.length) return;
-    fetchQuotes(invRef.current, keyRef.current).then((r) => {
+    fetchQuotes(invRef.current, keyRef.current, yahooRef.current).then((r) => {
       setQuotes(r.quotes);
       setQuotesErrors(r.errors);
       setQuotesUpdated(new Date());
     });
-  }, [invSignature, settings.finnhubKey]);
+  }, [invSignature, settings.finnhubKey, settings.yahooProxyUrl]);
 
   const rateFor = useCallback(
     (kind: DollarKind, side: 'compra' | 'venta' = 'venta') => {

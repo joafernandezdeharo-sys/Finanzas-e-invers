@@ -105,6 +105,7 @@ export interface Settings {
   theme: Theme;
   refreshSeconds: number;
   finnhubKey: string;
+  yahooProxyUrl: string; // URL del puente (Cloudflare Worker) para consultar Yahoo Finance
   rss2jsonKey: string;
   incomeCategories: string[];
   expenseCategories: string[];

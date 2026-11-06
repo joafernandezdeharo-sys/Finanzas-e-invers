@@ -25,3 +25,5 @@ export const IconDownload = base(['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14']);
 export const IconUpload = base(['M12 21V9', 'm7 14 5-5 5 5', 'M5 3h14']);
 export const IconExternal = base(['M15 3h6v6', 'M10 14 21 3', 'M21 14v7H3V3h7']);
 export const IconHistory = base(['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5', 'M12 7v5l3 2']);
+export const IconGlobe = base(['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M3 12h18', 'M12 3a14 14 0 0 1 0 18', 'M12 3a14 14 0 0 0 0 18']);
+export const IconInfo = base(['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 16v-4', 'M12 8h.01']);

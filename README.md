@@ -12,24 +12,41 @@ App web para manejar tus finanzas personales día a día: ingresos y gastos, aho
 | **Historial** | Todo lo acumulado mes a mes y año a año: ingresos, gastos, balance, % de ahorro y en qué se fue la plata, con filtros por año y por banco/app. |
 | **Ahorro** | Metas de ahorro en ARS o USD con progreso, fecha límite y cuota mensual sugerida; aportes y retiros; evolución del ahorro acumulado. |
 | **Dólar** | Cotizaciones en vivo (oficial, blue, MEP, CCL, mayorista, cripto, tarjeta), histórico (1M a 5A), calculadora, y registro de tus compras y ventas con el precio que pagaste, precio promedio y ganancia/pérdida contra hoy. |
+| **Mercado** | Indicadores oficiales del BCRA (dólar A 3500, reservas, inflación, tasas, UVA, CER), riesgo país, índices, commodities y ADRs argentinos con gráficos históricos. |
+| **Fuentes de datos** | De dónde sale cada dato, con prueba en vivo de cada fuente y la guía para conectar Yahoo Finance. |
 | **Inversiones** | CEDEARs, acciones argentinas y de EE.UU., bonos/ONs, cripto, plazos fijos (con TNA), FCIs y otros. Precio en vivo, variación diaria, resultado por activo y total, distribución de la cartera. |
 | **Noticias** | Feed de noticias de economía y mercados (Ámbito, Infobae, La Nación, Google News…) con filtro por fuente y búsqueda. Podés agregar cualquier RSS. |
 | **Configuración** | Nombre, tema claro/oscuro, moneda de visualización, dólar usado para convertir, presupuesto, frecuencia de actualización, categorías, cuentas, fuentes de noticias, API keys, backup/importación JSON, datos de ejemplo. |
 
 En la barra superior podés cambiar en cualquier momento entre **pesos y dólares**: todos los montos se convierten con el tipo de dólar que elijas en Configuración.
 
-## Fuentes de datos en tiempo real
+## Fuentes de datos
 
-| Dato | Fuente | Requiere key |
+Priorizamos fuentes **oficiales** y de **mercado**; los agregadores se usan solo donde no hay una fuente oficial accesible. La sección *Fuentes de datos* de la app muestra este detalle y permite probar cada fuente en vivo.
+
+| Dato | Fuente | Tipo |
 |---|---|---|
-| Cotizaciones del dólar | [DolarAPI](https://dolarapi.com) | No |
-| Histórico del dólar | [ArgentinaDatos](https://argentinadatos.com) | No |
-| CEDEARs, acciones, bonos y ONs (BYMA) y acciones EE.UU. | [data912](https://data912.com) | No |
-| Criptomonedas | [CoinGecko](https://www.coingecko.com) | No |
-| Acciones EE.UU. (alternativa) | [Finnhub](https://finnhub.io) | Sí (gratis) |
-| Noticias (RSS) | rss2json + proxies CORS públicos | Opcional |
+| Acciones argentinas, CEDEARs, acciones de EE.UU./ADRs, cripto, índices (Merval, S&P 500, Nasdaq…), oro, petróleo, gráficos históricos | [Yahoo Finance](https://finance.yahoo.com) (requiere el puente, ver abajo) | Mercado |
+| Dólar oficial mayorista (Com. A 3500) y minorista, reservas, tasas (BADLAR, TAMAR, plazo fijo), inflación (INDEC), REM, UVA, CER, ICL | [API oficial del BCRA](https://www.bcra.gob.ar/BCRAyVos/catalogo-de-APIs-banco-central.asp) | Oficial |
+| Bonos y ONs (AL30, GD30…); respaldo de acciones y CEDEARs | [BYMA](https://www.byma.com.ar) vía [data912](https://data912.com) | Mercado |
+| Dólar blue, MEP, CCL, cripto, tarjeta | [DolarAPI](https://dolarapi.com) (el blue no tiene fuente oficial) | Agregador |
+| Histórico del dólar, riesgo país (JP Morgan EMBI) | [ArgentinaDatos](https://argentinadatos.com) | Agregador |
+| Respaldo de cripto y buscador | [CoinGecko](https://www.coingecko.com) | Agregador |
+| Respaldo opcional de acciones de EE.UU. | [Finnhub](https://finnhub.io) (API key gratis) | Agregador |
+| Noticias | Ámbito, Infobae, La Nación, Google News (RSS) | Prensa |
 
-Las cotizaciones se refrescan automáticamente (cada 60 s por defecto, configurable).
+Si una fuente no responde, la app pasa automáticamente a la siguiente y muestra debajo de cada precio de dónde salió.
+
+### Conectar Yahoo Finance (una sola vez, gratis)
+
+Yahoo Finance no permite que una página web consulte sus precios directamente desde el navegador, y los intermediarios públicos gratuitos no son confiables. Por eso se usa un **puente propio** en Cloudflare Workers (plan gratuito: 100.000 consultas por día). El código está en [`proxy/yahoo-worker.js`](proxy/yahoo-worker.js): solo deja pasar consultas de cotizaciones, gráficos y búsqueda de Yahoo Finance.
+
+1. Crear una cuenta gratuita en [dash.cloudflare.com](https://dash.cloudflare.com/sign-up).
+2. *Workers & Pages* → *Create* → *Create Worker* → nombre `yahoo-finanzas` → *Deploy*.
+3. *Edit code* → reemplazar todo por el contenido de `proxy/yahoo-worker.js` → *Deploy*.
+4. Copiar la dirección del Worker (`https://yahoo-finanzas.<usuario>.workers.dev`) y pegarla en la app, en *Fuentes de datos → Conectar Yahoo Finance*.
+
+Sin el puente, la app funciona igual usando BYMA (vía data912) y CoinGecko.
 
 ## Importación de resúmenes
 

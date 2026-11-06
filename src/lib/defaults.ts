@@ -13,13 +13,13 @@ export const DOLLAR_KINDS: { value: DollarKind; label: string }[] = [
 export const dollarLabel = (k: string) => DOLLAR_KINDS.find((d) => d.value === k)?.label ?? k;
 
 export const ASSET_TYPES: { value: AssetType; label: string; hint: string }[] = [
-  { value: 'cripto', label: 'Cripto', hint: 'Cotiza en vivo vía CoinGecko. Símbolo = id de CoinGecko (ej. bitcoin, ethereum, tether).' },
-  { value: 'cedear', label: 'CEDEAR', hint: 'Cotiza en vivo en ARS vía data912 (BYMA). Símbolo = ticker (ej. AAPL, SPY, MELI).' },
-  { value: 'accion_ar', label: 'Acción argentina', hint: 'Cotiza en vivo en ARS vía data912 (BYMA). Símbolo = ticker (ej. GGAL, YPFD, PAMP).' },
-  { value: 'bono', label: 'Bono / ON', hint: 'Cotiza en vivo vía data912. Ej. AL30 (ARS), AL30D (USD), GD30.' },
-  { value: 'accion_us', label: 'Acción EE.UU.', hint: 'Cotiza en vivo en USD vía data912 o Finnhub (si cargaste la API key).' },
-  { value: 'plazo_fijo', label: 'Plazo fijo', hint: 'Se calcula con la TNA desde la fecha de constitución.' },
-  { value: 'fci', label: 'FCI', hint: 'Cargá el valor de la cuotaparte manualmente.' },
+  { value: 'cedear', label: 'CEDEAR', hint: 'Cotiza en pesos con Yahoo Finance (ej. AAPL → AAPL.BA). Respaldo: BYMA vía data912. Ticker: AAPL, SPY, MELI…' },
+  { value: 'accion_ar', label: 'Acción argentina', hint: 'Cotiza en pesos con Yahoo Finance (ej. GGAL → GGAL.BA). Respaldo: BYMA vía data912. Ticker: GGAL, YPFD, PAMP…' },
+  { value: 'accion_us', label: 'Acción EE.UU. / ADR', hint: 'Cotiza en dólares con Yahoo Finance. Ticker como en Wall Street: AAPL, GGAL, YPF, MELI…' },
+  { value: 'cripto', label: 'Cripto', hint: 'Cotiza con Yahoo Finance (ej. bitcoin → BTC-USD). Respaldo: CoinGecko. Podés escribir el nombre (bitcoin) o la sigla (BTC).' },
+  { value: 'bono', label: 'Bono / ON', hint: 'Yahoo Finance no tiene bonos argentinos: cotiza con datos de BYMA (vía data912). Ej. AL30 (pesos), AL30D (dólares), GD30.' },
+  { value: 'plazo_fijo', label: 'Plazo fijo', hint: 'Se calcula con la TNA desde la fecha de constitución. Tasa de referencia en Mercado (BCRA).' },
+  { value: 'fci', label: 'FCI', hint: 'Cargá el valor de la cuotaparte manualmente (lo publica tu sociedad gerente o CAFCI).' },
   { value: 'otro', label: 'Otro', hint: 'Precio actual manual.' },
 ];
 
@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   refreshSeconds: 60,
   finnhubKey: '',
+  yahooProxyUrl: '',
   rss2jsonKey: '',
   incomeCategories: ['Sueldo', 'Freelance', 'Ventas', 'Intereses', 'Alquileres', 'Regalos', 'Reintegros', 'Transferencias recibidas', 'Otros ingresos'],
   expenseCategories: [
