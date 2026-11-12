@@ -87,7 +87,7 @@ function MovementForm({ initial, goalId, onClose }: { initial?: SavingsMovement;
 export default function Ahorro() {
   const { data, remove } = useStore();
   const { goals, savings, settings } = data;
-  const { toDisplay, rate } = useLive();
+  const { toDisplay, flow, rate } = useLive();
   const colors = useThemeColors();
   const cur = settings.displayCurrency;
   const [goalEdit, setGoalEdit] = useState<SavingsGoal | 'new' | null>(null);
@@ -100,7 +100,7 @@ export default function Ahorro() {
   const total = toDisplay(totalARS, 'ARS') + toDisplay(totalUSD, 'USD');
 
   const thisMonth = todayISO().slice(0, 7);
-  const savedThisMonth = sum(savings.filter((s) => monthKey(s.date) === thisMonth).map((s) => toDisplay(s.amount, s.currency)));
+  const savedThisMonth = sum(savings.filter((s) => monthKey(s.date) === thisMonth).map((s) => flow(s.amount, s.currency, s.date)));
 
   const evolution = useMemo(() => {
     const sorted = [...savings].sort((a, b) => a.date.localeCompare(b.date));
@@ -207,7 +207,7 @@ export default function Ahorro() {
                     <td>{goals.find((g) => g.id === s.goalId)?.name ?? <span className="muted">Ahorro general</span>}</td>
                     <td className="muted">{s.note || '—'}</td>
                     <td className={`r ${s.amount >= 0 ? 'good' : 'bad'}`}>{s.amount >= 0 ? '+' : ''}{formatMoney(s.amount, s.currency)}</td>
-                    <td className="r muted">{formatMoney(toDisplay(s.amount, s.currency), cur)}</td>
+                    <td className="r muted">{formatMoney(flow(s.amount, s.currency, s.date), cur)}</td>
                     <td className="actions">
                       <button className="btn-icon" aria-label="Editar" onClick={() => setMovEdit({ initial: s })}><IconEdit /></button>
                       <button className="btn-icon" aria-label="Eliminar" onClick={() => confirm('¿Eliminar este movimiento?') && remove('savings', s.id)}><IconTrash /></button>

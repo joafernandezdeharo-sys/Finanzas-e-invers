@@ -23,6 +23,8 @@ export interface ParsedRow {
   signed: number; // positivo = entra plata (crédito), negativo = sale (débito) — antes de aplicar "modo tarjeta"
   currency: Currency;
   exclude?: string; // motivo por el que se sugiere no importarlo
+  internalHint?: string; // motivo por el que parece un movimiento entre cuentas propias
+  isCard?: boolean;
 }
 
 export interface Analysis {
@@ -274,7 +276,9 @@ export function analyze(doc: RawDoc, opts: { mapping?: Mapping | null; defaultCu
   rows.forEach((r) => {
     const d = norm(r.description);
     if (EXCLUDE_RE.test(d)) r.exclude = 'Parece un saldo o total, no un movimiento';
-    else if (isCard && CARD_PAYMENT_RE.test(d)) r.exclude = 'Pago de la tarjeta: ya figura como gasto en tu cuenta bancaria';
+    // el pago del resumen no es un ingreso: es plata que pasa del banco a la tarjeta
+    else if (isCard && CARD_PAYMENT_RE.test(d)) r.internalHint = 'Pago de la tarjeta: se registra como movimiento entre cuentas';
+    r.isCard = isCard;
   });
 
   const positives = rows.filter((r) => r.signed > 0).length;

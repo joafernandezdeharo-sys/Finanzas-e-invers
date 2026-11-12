@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AppData, CategoryRule, CollectionKey, ImportBatch, Settings, Transaction } from '../types';
 import { DEFAULT_SETTINGS, emptyData } from '../lib/defaults';
-import { uid } from '../lib/util';
+import { todayISO, uid } from '../lib/util';
+import { pendingRecurring } from '../lib/recurring';
 
 const STORAGE_KEY = 'mis-finanzas:data:v1';
 
@@ -9,11 +10,13 @@ type Item<K extends CollectionKey> = AppData[K][number];
 
 interface Store {
   data: AppData;
-  add: <K extends CollectionKey>(key: K, item: Omit<Item<K>, 'id'>) => void;
+  add: <K extends CollectionKey>(key: K, item: Omit<Item<K>, 'id'>) => string;
   update: <K extends CollectionKey>(key: K, id: string, patch: Partial<Item<K>>) => void;
   remove: (key: CollectionKey, id: string) => void;
   setSettings: (patch: Partial<Settings>) => void;
   replaceAll: (data: AppData) => void;
+  /** Reemplaza los movimientos vinculados a una operación (compra de dólares, aporte de ahorro…) */
+  setLinked: (linkId: string, txs: Omit<Transaction, 'id' | 'linkId'>[]) => void;
   reset: () => void;
   /** Agrega los movimientos de un resumen importado (se acumulan con los existentes) */
   importBatch: (batch: Omit<ImportBatch, 'id'>, txs: Omit<Transaction, 'id' | 'importId'>[], newRules: CategoryRule[]) => string;
@@ -40,7 +43,9 @@ export const normalize = (raw: unknown): AppData => {
     dollarOps: arr(r.dollarOps),
     investments: arr(r.investments),
     imports: arr(r.imports),
+    recurring: arr(r.recurring),
     settings: { ...DEFAULT_SETTINGS, ...(r.settings ?? {}) },
+    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date(0).toISOString(),
   };
 };
 
@@ -54,7 +59,14 @@ const load = (): AppData => {
 };
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(load);
+  const [data, setRaw] = useState<AppData>(load);
+  /** Toda modificación hecha por el usuario actualiza la fecha (la usa la sincronización) */
+  const setData = useCallback((fn: AppData | ((d: AppData) => AppData)) => {
+    setRaw((d) => {
+      const next = typeof fn === 'function' ? fn(d) : fn;
+      return next === d ? d : { ...next, updatedAt: new Date().toISOString() };
+    });
+  }, []);
   const [storageError, setStorageError] = useState<string | null>(null);
 
   // pedimos al navegador que no borre los datos de la app aunque le falte espacio
@@ -75,29 +87,53 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [data]);
 
+  // carga automática de gastos/ingresos fijos (al abrir la app y cada hora)
+  useEffect(() => {
+    const run = () => setData((d) => {
+      const pend = pendingRecurring(d.recurring, d.transactions, todayISO());
+      return pend.length ? { ...d, transactions: [...d.transactions, ...pend.map((t) => ({ ...t, id: uid() }))] } : d;
+    });
+    run();
+    const t = setInterval(run, 3_600_000);
+    return () => clearInterval(t);
+  }, [data.recurring, setData]);
+
   const add = useCallback<Store['add']>((key, item) => {
-    setData((d) => ({ ...d, [key]: [...d[key], { ...item, id: uid() }] }));
-  }, []);
+    const id = uid();
+    setData((d) => ({ ...d, [key]: [...d[key], { ...item, id }] }));
+    return id;
+  }, [setData]);
+
+  const setLinked = useCallback<Store['setLinked']>((linkId, txs) => {
+    setData((d) => ({
+      ...d,
+      transactions: [...d.transactions.filter((t) => t.linkId !== linkId), ...txs.map((t) => ({ ...t, id: uid(), linkId }))],
+    }));
+  }, [setData]);
 
   const update = useCallback<Store['update']>((key, id, patch) => {
     setData((d) => ({
       ...d,
       [key]: (d[key] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...patch } : x)),
     }));
-  }, []);
+  }, [setData]);
 
   const remove = useCallback<Store['remove']>((key, id) => {
     setData((d) => {
       const next = { ...d, [key]: (d[key] as { id: string }[]).filter((x) => x.id !== id) };
       // al borrar una meta, sus aportes pasan a "ahorro general"
       if (key === 'goals') next.savings = d.savings.map((s) => (s.goalId === id ? { ...s, goalId: '' } : s));
+      // los movimientos generados por la operación se borran con ella
+      if (key !== 'transactions') next.transactions = d.transactions.filter((t) => t.linkId !== id);
+      // al borrar un fijo, sus movimientos ya cargados quedan como movimientos normales
+      if (key === 'recurring') next.transactions = next.transactions.map((t) => (t.recurringId === id ? { ...t, recurringId: undefined } : t));
       return next as AppData;
     });
-  }, []);
+  }, [setData]);
 
   const setSettings = useCallback((patch: Partial<Settings>) => {
     setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
-  }, []);
+  }, [setData]);
 
   const importBatch = useCallback<Store['importBatch']>((batch, txs, newRules) => {
     const id = uid();
@@ -118,22 +154,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       };
     });
     return id;
-  }, []);
+  }, [setData]);
 
   const removeImport = useCallback((id: string) => {
     setData((d) => ({ ...d, transactions: d.transactions.filter((t) => t.importId !== id), imports: d.imports.filter((b) => b.id !== id) }));
-  }, []);
+  }, [setData]);
 
   const clearImports = useCallback(() => {
     setData((d) => ({ ...d, transactions: d.transactions.filter((t) => !t.importId), imports: [] }));
-  }, []);
+  }, [setData]);
 
-  const replaceAll = useCallback((d: AppData) => setData(normalize(d)), []);
-  const reset = useCallback(() => setData(emptyData()), []);
+  /** Reemplaza todo (importar backup / datos de ejemplo / sincronización). Conserva la fecha del origen. */
+  const replaceAll = useCallback((d: AppData) => setRaw(normalize(d)), []);
+  const reset = useCallback(() => setData(emptyData()), [setData]);
 
   const value = useMemo(
-    () => ({ data, add, update, remove, setSettings, replaceAll, reset, importBatch, removeImport, clearImports, storageError }),
-    [data, add, update, remove, setSettings, replaceAll, reset, importBatch, removeImport, clearImports, storageError],
+    () => ({ data, add, update, remove, setSettings, replaceAll, setLinked, reset, importBatch, removeImport, clearImports, storageError }),
+    [data, add, update, remove, setSettings, replaceAll, setLinked, reset, importBatch, removeImport, clearImports, storageError],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

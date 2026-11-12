@@ -2,17 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { useStore } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
-import { Card, Empty, Field, Modal, NumberInput, PageHead, Stat } from '../components/ui';
-import { IconChart, IconEdit, IconExternal, IconPlus, IconRefresh, IconTrash } from '../components/Icons';
+import { Card, Empty, Field, Modal, NumberInput, PageHead, Segmented, Stat } from '../components/ui';
+import { IconChart, IconEdit, IconExternal, IconList, IconPlus, IconRefresh, IconTrash } from '../components/Icons';
 import { MoneyTooltip, useThemeColors } from '../components/charts';
 import { ASSET_TYPES, assetLabel } from '../lib/defaults';
-import { valueInvestment, type Valuation } from '../lib/portfolio';
+import { computePosition, effectiveOps, syncSummary, unitFactor, valueInvestment, type Valuation } from '../lib/portfolio';
 import { searchCoins, type CoinSearchResult } from '../services/prices';
 import { yahooPage, yahooSymbol } from '../services/yahoo';
 import { YahooChart } from '../components/YahooChart';
 import { Link } from 'react-router-dom';
-import { formatDate, formatMoney, formatNumber, formatPct, sum, todayISO } from '../lib/util';
-import type { AssetType, Currency, Investment } from '../types';
+import { formatDate, formatMoney, formatNumber, formatPct, sum, todayISO, uid } from '../lib/util';
+import type { AssetType, Currency, Investment, InvestmentOp, InvestmentOpKind } from '../types';
 
 /** Página de referencia del activo: Yahoo Finance si lo cotiza, si no la ficha del bono en BYMA/Rava */
 const externalLink = (inv: Investment) => {
@@ -24,6 +24,9 @@ const externalLink = (inv: Investment) => {
 
 function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: () => void }) {
   const { add, update } = useStore();
+  const { rateOn } = useLive();
+  // con más de una operación, cantidad y precio se manejan desde "Operaciones"
+  const multiOps = (initial?.ops?.length ?? 0) > 1;
   const [f, setF] = useState<Omit<Investment, 'id' | 'quantity' | 'buyPrice'> & { quantity: number | null; buyPrice: number | null }>({
     type: initial?.type ?? 'cedear',
     symbol: initial?.symbol ?? '',
@@ -52,11 +55,18 @@ function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: (
     setF({ ...f, type, currency, quantity: type === 'plazo_fijo' ? 1 : f.quantity });
   };
 
-  const valid = (isPF || f.symbol.trim()) && f.quantity && f.quantity > 0 && f.buyPrice != null && f.buyPrice >= 0;
+  const valid = (isPF || f.symbol.trim()) && (multiOps || (f.quantity && f.quantity > 0 && f.buyPrice != null && f.buyPrice >= 0));
   const save = () => {
     if (!valid) return;
-    const inv = { ...f, symbol: f.symbol.trim() || (isPF ? 'PF' : ''), quantity: f.quantity!, buyPrice: f.buyPrice! };
-    if (initial) update('investments', initial.id, inv); else add('investments', inv);
+    const meta = { ...f, symbol: f.symbol.trim() || (isPF ? 'PF' : '') };
+    if (multiOps && initial) {
+      update('investments', initial.id, { ...meta, quantity: initial.quantity, buyPrice: initial.buyPrice, buyDate: initial.buyDate, ops: initial.ops });
+    } else {
+      const op: InvestmentOp = { id: initial?.ops?.[0]?.id ?? uid(), date: f.buyDate, kind: 'compra', quantity: f.quantity!, price: f.buyPrice!, currency: f.currency };
+      const inv = { ...meta, quantity: f.quantity!, buyPrice: f.buyPrice!, ops: [op] };
+      const summary = syncSummary({ ...inv, id: '' }, rateOn);
+      if (initial) update('investments', initial.id, { ...inv, ...summary }); else add('investments', { ...inv, ...summary });
+    }
     onClose();
   };
 
@@ -87,9 +97,11 @@ function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: (
             <Field label="Capital"><NumberInput value={f.buyPrice} onChange={(n) => setF({ ...f, buyPrice: n })} /></Field>
             <Field label="TNA %"><NumberInput value={f.annualRate} onChange={(n) => setF({ ...f, annualRate: n })} placeholder="Ej. 32" /></Field>
           </>
+        ) : multiOps ? (
+          <div className="full alert">Esta inversión tiene varias compras/ventas: la cantidad y el precio se editan en <b>Operaciones</b>.</div>
         ) : (
           <>
-            <Field label="Cantidad" hint={f.type === 'bono' ? 'Valor nominal' : undefined}><NumberInput value={f.quantity} onChange={(n) => setF({ ...f, quantity: n })} /></Field>
+            <Field label={initial ? 'Cantidad' : 'Cantidad comprada'} hint={f.type === 'bono' ? 'Valor nominal' : undefined}><NumberInput value={f.quantity} onChange={(n) => setF({ ...f, quantity: n })} /></Field>
             <Field label="Precio de compra (unitario)" hint={f.type === 'bono' ? 'Precio cada 100 VN, como cotiza en el mercado' : undefined}>
               <NumberInput value={f.buyPrice} onChange={(n) => setF({ ...f, buyPrice: n })} />
             </Field>
@@ -100,7 +112,7 @@ function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: (
             <option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option>
           </select>
         </Field>
-        <Field label={isPF ? 'Fecha de constitución' : 'Fecha de compra'}>
+        <Field label={isPF ? 'Fecha de constitución' : multiOps ? 'Fecha de la primera compra' : 'Fecha de compra'}>
           <input type="date" className="input" value={f.buyDate} onChange={(e) => setF({ ...f, buyDate: e.target.value })} />
         </Field>
         <Field label="Broker / banco"><input className="input" value={f.broker} onChange={(e) => setF({ ...f, broker: e.target.value })} placeholder="Ej. IOL, Balanz, Binance" /></Field>
@@ -116,6 +128,91 @@ function InvestmentForm({ initial, onClose }: { initial?: Investment; onClose: (
   );
 }
 
+const OP_LABEL: Record<InvestmentOpKind, string> = { compra: 'Compra', venta: 'Venta', dividendo: 'Dividendo / renta', comision: 'Comisión' };
+
+/** Registro de operaciones de una inversión: compras, ventas parciales, dividendos y comisiones */
+function OpsModal({ inv, onClose }: { inv: Investment; onClose: () => void }) {
+  const { update, data } = useStore();
+  const disp = data.settings.displayCurrency;
+  const live = useLive();
+  const ops = effectiveOps(inv);
+  const pos = computePosition(inv, live.rateOn);
+  const [f, setF] = useState<{ kind: InvestmentOpKind; date: string; quantity: number | null; price: number | null; currency: Currency; note: string }>({
+    kind: 'compra', date: todayISO(), quantity: null, price: live.quotes[inv.id]?.price ?? null, currency: live.quotes[inv.id]?.currency ?? inv.currency, note: '',
+  });
+  const needsQty = f.kind === 'compra' || f.kind === 'venta';
+  const tooMuch = f.kind === 'venta' && (f.quantity ?? 0) > pos.quantity + 1e-9;
+  const valid = f.price != null && f.price > 0 && (!needsQty || (f.quantity != null && f.quantity > 0 && !tooMuch));
+
+  const save = (next: InvestmentOp[]) => {
+    const updated = { ...inv, ops: next };
+    update('investments', inv.id, { ops: next, ...syncSummary(updated, live.rateOn) });
+  };
+  const addOp = () => {
+    if (!valid) return;
+    save([...ops.map((o) => (o.id === 'inicial' ? { ...o, id: uid() } : o)), {
+      id: uid(), kind: f.kind, date: f.date, quantity: needsQty ? f.quantity! : 0, price: f.price!, currency: f.currency, note: f.note || undefined,
+    }]);
+    setF({ ...f, quantity: null, note: '' });
+  };
+  const f100 = unitFactor(inv);
+
+  return (
+    <Modal title={`Operaciones · ${inv.type === 'plazo_fijo' ? inv.name || 'Plazo fijo' : inv.symbol.toUpperCase()}`} onClose={onClose}>
+      <div className="grid grid-3 stats-compact" style={{ marginBottom: 12 }}>
+        <Stat label="Tenencia" value={formatNumber(pos.quantity, 6)} />
+        <Stat label="Precio promedio" value={formatMoney(pos.avgPrice, inv.currency)} />
+        <Stat label="Realizado + dividendos" value={formatMoney(pos.realized[disp] + pos.dividends[disp], disp)} />
+      </div>
+      <div className="table-wrap" style={{ maxHeight: 240, overflowY: 'auto' }}>
+        <table className="small">
+          <thead><tr><th>Fecha</th><th>Operación</th><th className="r">Cantidad</th><th className="r">Precio / monto</th><th className="r">Total</th><th /></tr></thead>
+          <tbody>
+            {ops.map((o) => (
+              <tr key={o.id}>
+                <td className="num">{formatDate(o.date)}</td>
+                <td><span className={`badge ${o.kind === 'compra' ? 'accent' : o.kind === 'venta' ? 'bad' : o.kind === 'dividendo' ? 'good' : ''}`}>{OP_LABEL[o.kind]}</span>{o.note && <div className="muted">{o.note}</div>}</td>
+                <td className="r">{o.quantity ? formatNumber(o.quantity, 6) : '—'}</td>
+                <td className="r">{formatMoney(o.price, o.currency)}</td>
+                <td className="r">{formatMoney(o.quantity ? o.quantity * o.price * f100 : o.price, o.currency)}</td>
+                <td className="actions">
+                  {ops.length > 1 && <button className="btn-icon" aria-label="Borrar operación" onClick={() => confirm('¿Borrar esta operación?') && save(ops.filter((x) => x.id !== o.id))}><IconTrash /></button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <form className="form-grid" style={{ marginTop: 14 }} onSubmit={(e) => { e.preventDefault(); addOp(); }}>
+        <div className="full">
+          <Segmented<InvestmentOpKind> value={f.kind} onChange={(kind) => setF({ ...f, kind })} options={(['compra', 'venta', 'dividendo', 'comision'] as const).map((k) => ({ value: k, label: OP_LABEL[k].split(' ')[0] }))} />
+        </div>
+        <Field label="Fecha"><input type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        {needsQty && (
+          <Field label="Cantidad" hint={f.kind === 'venta' ? `${tooMuch ? 'No podés vender más de lo que tenés: ' : 'Tenés '}${formatNumber(pos.quantity, 6)}` : undefined}>
+            <NumberInput value={f.quantity} onChange={(n) => setF({ ...f, quantity: n })} />
+          </Field>
+        )}
+        <Field label={needsQty ? (f100 !== 1 ? 'Precio (cada 100 VN)' : 'Precio unitario') : 'Monto total'}>
+          <NumberInput value={f.price} onChange={(n) => setF({ ...f, price: n })} />
+        </Field>
+        <Field label="Moneda">
+          <select className="select" value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value as Currency })}>
+            <option value="ARS">Pesos</option><option value="USD">Dólares</option>
+          </select>
+        </Field>
+        <Field label="Nota" full><input className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Opcional" /></Field>
+        <div className="full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary" type="submit" disabled={!valid}>Agregar {OP_LABEL[f.kind].toLowerCase()}</button>
+        </div>
+      </form>
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        Se usa el método de precio promedio. El resultado en dólares de cada operación se calcula con el dólar de su fecha.
+      </p>
+    </Modal>
+  );
+}
+
 type SortKey = 'value' | 'pnl' | 'pnlPct' | 'symbol';
 
 export default function Inversiones() {
@@ -126,21 +223,25 @@ export default function Inversiones() {
   const cur = settings.displayCurrency;
   const [edit, setEdit] = useState<Investment | 'new' | null>(null);
   const [chart, setChart] = useState<Investment | null>(null);
+  const [opsOf, setOpsOf] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
   const [brokerFilter, setBrokerFilter] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'value', dir: -1 });
 
   const valuations = useMemo(
-    () => investments.map((i) => valueInvestment(i, live.quotes[i.id], cur, live.rate)),
-    [investments, live.quotes, cur, live.rate],
+    () => investments.map((i) => valueInvestment(i, live.quotes[i.id], cur, live.rate, live.rateOn)),
+    [investments, live.quotes, cur, live.rate, live.rateOn],
   );
   const filtered = valuations
-    .filter((v) => (!typeFilter || v.inv.type === typeFilter) && (!brokerFilter || v.inv.broker === brokerFilter))
+    .filter((v) => (!typeFilter || v.inv.type === typeFilter) && (!brokerFilter || v.inv.broker === brokerFilter) && (showClosed || v.quantity > 0))
     .sort((a, b) => (sort.key === 'symbol' ? a.inv.symbol.localeCompare(b.inv.symbol) : (a[sort.key] - b[sort.key])) * sort.dir);
 
   const total = sum(filtered.map((v) => v.value));
   const cost = sum(filtered.map((v) => v.cost));
   const pnl = total - cost;
+  const realized = sum(valuations.map((v) => v.realized + v.dividends));
+  const closedCount = valuations.filter((v) => v.quantity <= 0).length;
   const brokers = [...new Set(investments.map((i) => i.broker).filter(Boolean))];
 
   const allocation = useMemo(() => {
@@ -168,9 +269,9 @@ export default function Inversiones() {
 
       <div className="grid grid-4">
         <Stat label="Valor de la cartera" value={formatMoney(total, cur)} sub={live.quotesUpdated ? <><span className="live-dot" /> Actualizado {live.quotesUpdated.toLocaleTimeString('es-AR')}</> : 'Sin cotizaciones aún'} />
-        <Stat label="Capital invertido" value={formatMoney(cost, cur)} />
-        <Stat label="Ganancia / pérdida" value={formatMoney(pnl, cur)} tone={pnl >= 0 ? 'good' : 'bad'} sub={formatPct(cost ? (pnl / cost) * 100 : 0)} />
-        <Stat label="Activos" value={String(filtered.length)} sub={`${valuations.filter((v) => v.live).length} con cotización en vivo`} />
+        <Stat label="Capital invertido" value={formatMoney(cost, cur)} sub={cur === 'USD' ? 'Cada compra con el dólar de su fecha' : 'Pesos invertidos en cada compra'} />
+        <Stat label="Ganancia / pérdida (tenencia)" value={formatMoney(pnl, cur)} tone={pnl >= 0 ? 'good' : 'bad'} sub={formatPct(cost ? (pnl / cost) * 100 : 0)} />
+        <Stat label="Ventas y dividendos" value={formatMoney(realized, cur)} tone={realized > 0 ? 'good' : realized < 0 ? 'bad' : undefined} sub="Resultado ya realizado (incluye comisiones)" />
       </div>
 
       <div className="grid grid-3">
@@ -238,6 +339,9 @@ export default function Inversiones() {
             {brokers.map((b) => <option key={b}>{b}</option>)}
           </select>
         )}
+        {closedCount > 0 && (
+          <label className="small toggle"><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />Ver vendidas ({closedCount})</label>
+        )}
       </>}>
         {filtered.length ? (
           <div className="table-wrap">
@@ -246,7 +350,7 @@ export default function Inversiones() {
                 <tr>
                   <th className="sortable" onClick={() => sortBy('symbol')}>Activo{arrow('symbol')}</th>
                   <th className="r">Cantidad</th>
-                  <th className="r">Precio compra</th>
+                  <th className="r">Precio prom.</th>
                   <th className="r">Precio actual</th>
                   <th className="r">Var. día</th>
                   <th className="r sortable" onClick={() => sortBy('value')}>Valor ({cur}){arrow('value')}</th>
@@ -271,17 +375,21 @@ export default function Inversiones() {
                           {v.inv.type !== 'plazo_fijo' && v.inv.name ? `${v.inv.name} · ` : ''}{formatDate(v.inv.buyDate)}{v.inv.broker ? ` · ${v.inv.broker}` : ''}
                         </div>
                       </td>
-                      <td className="r">{formatNumber(v.inv.quantity, 6)}</td>
-                      <td className="r">{formatMoney(v.inv.buyPrice, v.inv.currency)}</td>
+                      <td className="r">{v.quantity > 0 ? formatNumber(v.quantity, 6) : <span className="badge">Vendida</span>}</td>
+                      <td className="r">{formatMoney(v.avgPrice, v.inv.currency)}</td>
                       <td className="r">
                         {formatMoney(v.priceNative, v.priceCurrency)}
                         <div className="small muted" title={v.source}>{v.live ? <><span className="live-dot" /> {v.source}</> : v.source}</div>
                       </td>
                       <td className={`r ${v.changePct == null ? 'muted' : v.changePct >= 0 ? 'good' : 'bad'}`}>{v.changePct == null ? '—' : formatPct(v.changePct)}</td>
                       <td className="r"><b>{formatMoney(v.value, cur)}</b></td>
-                      <td className={`r ${v.pnl >= 0 ? 'good' : 'bad'}`}>{formatMoney(v.pnl, cur)}</td>
+                      <td className={`r ${v.pnl >= 0 ? 'good' : 'bad'}`}>
+                        {formatMoney(v.pnl, cur)}
+                        {(v.realized || v.dividends) ? <div className="small muted">Realizado {formatMoney(v.realized + v.dividends, cur, { compact: true })}</div> : null}
+                      </td>
                       <td className={`r ${v.pnl >= 0 ? 'good' : 'bad'}`}>{formatPct(v.pnlPct)}</td>
                       <td className="actions">
+                        {v.inv.type !== 'plazo_fijo' && <button className="btn-icon" onClick={() => setOpsOf(v.inv.id)} aria-label="Operaciones" title="Operaciones: comprar más, vender, dividendos"><IconList /></button>}
                         <button className="btn-icon" aria-label="Editar" onClick={() => setEdit(v.inv)}><IconEdit /></button>
                         <button className="btn-icon" aria-label="Eliminar" onClick={() => confirm('¿Eliminar esta inversión?') && remove('investments', v.inv.id)}><IconTrash /></button>
                       </td>
@@ -302,7 +410,7 @@ export default function Inversiones() {
           </div>
         ) : <Empty title="Tu cartera está vacía">Agregá CEDEARs, acciones, bonos, cripto, plazos fijos o FCIs.</Empty>}
         <p className="small muted" style={{ marginBottom: 0 }}>
-          Los resultados se calculan convirtiendo todo a {cur} con el dólar elegido en Configuración. Debajo de cada precio figura su fuente; el detalle de todas las fuentes está en <Link to="/fuentes">Fuentes de datos</Link>.
+          El valor actual se convierte con el dólar de hoy y el costo con el dólar de la fecha de cada compra, así el rendimiento en dólares es real. Debajo de cada precio figura su fuente; el detalle de todas las fuentes está en <Link to="/fuentes">Fuentes de datos</Link>.
         </p>
       </Card>
 
@@ -312,6 +420,7 @@ export default function Inversiones() {
           <div className="modal-foot"><a className="btn btn-sm" href={yahooPage(yahooSymbol(chart)!)} target="_blank" rel="noreferrer">Ver en Yahoo Finance <IconExternal width={12} height={12} /></a></div>
         </Modal>
       )}
+      {opsOf && investments.find((i) => i.id === opsOf) && <OpsModal inv={investments.find((i) => i.id === opsOf)!} onClose={() => setOpsOf(null)} />}
       {edit && <InvestmentForm initial={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
     </>
   );

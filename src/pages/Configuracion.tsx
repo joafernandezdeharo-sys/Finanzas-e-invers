@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { InstallCard, SecurityCard, SyncCard } from '../components/DeviceCards';
+import { exportBackup } from '../components/BackupReminder';
 import { Link } from 'react-router-dom';
 import { useStore, normalize } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
@@ -6,7 +8,7 @@ import { Card, Field, NumberInput, PageHead, Segmented } from '../components/ui'
 import { IconDownload, IconPlus, IconTrash, IconUpload, IconX } from '../components/Icons';
 import { DEFAULT_SETTINGS, DOLLAR_KINDS } from '../lib/defaults';
 import { sampleData } from '../lib/sample';
-import { downloadFile, formatMoney, todayISO, uid } from '../lib/util';
+import { formatMoney, uid } from '../lib/util';
 import type { Settings, Theme } from '../types';
 
 function ChipList({ items, onChange, placeholder }: { items: string[]; onChange: (xs: string[]) => void; placeholder: string }) {
@@ -43,7 +45,7 @@ export default function Configuracion() {
   const [newRule, setNewRule] = useState({ keyword: '', category: settings.expenseCategories[0] ?? '' });
   const set = (patch: Partial<Settings>) => setSettings(patch);
 
-  const exportJSON = () => downloadFile(`mis-finanzas-backup-${todayISO()}.json`, JSON.stringify(data, null, 2));
+  const exportJSON = () => exportBackup(data);
   const importJSON = async (file: File) => {
     try {
       const parsed = JSON.parse(await file.text());
@@ -60,6 +62,14 @@ export default function Configuracion() {
   return (
     <>
       <PageHead title="Configuración" subtitle="Personalizá la app, las categorías, las fuentes de datos y hacé backups." />
+
+      <h2 className="section-title">Este dispositivo</h2>
+      <div className="grid grid-2">
+        <SyncCard />
+        <SecurityCard />
+        <InstallCard />
+      </div>
+      <h2 className="section-title">La app</h2>
 
       <div className="grid grid-2">
         <Card title="General">

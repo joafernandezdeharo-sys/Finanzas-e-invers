@@ -1,4 +1,4 @@
-import type { AppData, AssetType, CategoryRule, DollarKind, Settings } from '../types';
+import type { AccountInfo, AccountKind, AppData, AssetType, CategoryRule, DollarKind, Settings } from '../types';
 
 export const DOLLAR_KINDS: { value: DollarKind; label: string }[] = [
   { value: 'oficial', label: 'Oficial' },
@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
     'Salidas', 'Ropa', 'Suscripciones', 'Tarjeta de crédito', 'Impuestos', 'Comisiones bancarias', 'Hogar', 'Mascotas',
     'Delivery', 'Combustible', 'Transferencias enviadas', 'Otros gastos',
   ],
-  accounts: ['Efectivo', 'Banco', 'Billetera virtual', 'Tarjeta de crédito'],
+  accounts: ['Efectivo', 'Banco', 'Billetera virtual', 'Tarjeta de crédito', 'Dólares (efectivo)'],
   newsSources: [
     { id: 'ambito-fin', name: 'Ámbito · Finanzas', url: 'https://www.ambito.com/rss/pages/finanzas.xml', enabled: true },
     { id: 'ambito-eco', name: 'Ámbito · Economía', url: 'https://www.ambito.com/rss/pages/economia.xml', enabled: true },
@@ -51,7 +51,33 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   monthlyBudget: 0,
   categoryRules: [],
+  inflationAdjusted: false,
+  accountInfo: {},
+  budgets: [],
+  alerts: [],
+  notifications: false,
 };
+
+export const ACCOUNT_KINDS: { value: AccountKind; label: string }[] = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'banco', label: 'Cuenta bancaria' },
+  { value: 'billetera', label: 'Billetera virtual' },
+  { value: 'tarjeta', label: 'Tarjeta de crédito' },
+  { value: 'broker', label: 'Broker / inversiones' },
+  { value: 'otro', label: 'Otra' },
+];
+
+/** Datos de una cuenta (con valores por defecto deducidos del nombre si todavía no se configuró) */
+export function accountInfo(name: string, info: Record<string, AccountInfo>): AccountInfo {
+  if (info[name]) return info[name];
+  const n = name.toLowerCase();
+  const kind: AccountKind = /tarjeta|visa|master|amex|cabal/.test(n) ? 'tarjeta'
+    : /efectivo|cash/.test(n) ? 'efectivo'
+    : /billetera|mercado pago|uala|ualá|brubank|naranja x|lemon|belo|prex/.test(n) ? 'billetera'
+    : /broker|iol|balanz|cocos|bull|ppi|binance/.test(n) ? 'broker'
+    : 'banco';
+  return { currency: /usd|d[oó]lar/.test(n) ? 'USD' : 'ARS', kind, opening: 0, openingDate: '' };
+}
 
 export const emptyData = (): AppData => ({
   version: 1,
@@ -61,6 +87,8 @@ export const emptyData = (): AppData => ({
   dollarOps: [],
   investments: [],
   imports: [],
+  recurring: [],
+  updatedAt: new Date(0).toISOString(),
   settings: structuredClone(DEFAULT_SETTINGS),
 });
 

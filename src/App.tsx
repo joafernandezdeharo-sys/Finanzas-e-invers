@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './store/AppStore';
 import { useLive } from './store/LiveData';
 import { CurrencyToggle } from './components/ui';
-import { IconChart, IconDollar, IconGlobe, IconHistory, IconHome, IconInfo, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings, IconUpload } from './components/Icons';
+import { IconChart, IconDollar, IconBell, IconGlobe, IconHistory, IconTarget, IconWallet, IconHome, IconInfo, IconList, IconMenu, IconNews, IconPiggy, IconRefresh, IconSettings, IconUpload } from './components/Icons';
 import { dollarLabel } from './lib/defaults';
 import { formatMoney } from './lib/util';
 import Dashboard from './pages/Dashboard';
@@ -17,20 +17,53 @@ import Importar from './pages/Importar';
 import Historial from './pages/Historial';
 import Mercado from './pages/Mercado';
 import Fuentes from './pages/Fuentes';
+import Patrimonio from './pages/Patrimonio';
+import Presupuesto from './pages/Presupuesto';
+import Alertas from './pages/Alertas';
+import { Watcher } from './components/Watcher';
+import { LockGate } from './components/LockGate';
+import { SyncManager } from './components/SyncManager';
+import { BackupReminder } from './components/BackupReminder';
 import logo from './assets/logo.svg';
 
-const NAV = [
-  { to: '/', label: 'Resumen', icon: IconHome },
-  { to: '/movimientos', label: 'Ingresos y gastos', icon: IconList },
-  { to: '/importar', label: 'Importar resúmenes', icon: IconUpload },
-  { to: '/historial', label: 'Historial', icon: IconHistory },
-  { to: '/ahorro', label: 'Ahorro', icon: IconPiggy },
-  { to: '/dolar', label: 'Dólar', icon: IconDollar },
-  { to: '/inversiones', label: 'Inversiones', icon: IconChart },
-  { to: '/mercado', label: 'Mercado', icon: IconGlobe },
-  { to: '/noticias', label: 'Noticias', icon: IconNews },
-  { to: '/fuentes', label: 'Fuentes de datos', icon: IconInfo },
-  { to: '/configuracion', label: 'Configuración', icon: IconSettings },
+const NAV: { title?: string; items: { to: string; label: string; icon: typeof IconHome }[] }[] = [
+  {
+    items: [
+      { to: '/', label: 'Resumen', icon: IconHome },
+    ],
+  },
+  {
+    title: 'Día a día',
+    items: [
+      { to: '/movimientos', label: 'Ingresos y gastos', icon: IconList },
+      { to: '/importar', label: 'Importar resúmenes', icon: IconUpload },
+      { to: '/presupuesto', label: 'Presupuesto y fijos', icon: IconTarget },
+      { to: '/historial', label: 'Historial', icon: IconHistory },
+    ],
+  },
+  {
+    title: 'Lo que tengo',
+    items: [
+      { to: '/patrimonio', label: 'Patrimonio', icon: IconWallet },
+      { to: '/ahorro', label: 'Ahorro', icon: IconPiggy },
+      { to: '/dolar', label: 'Dólar', icon: IconDollar },
+      { to: '/inversiones', label: 'Inversiones', icon: IconChart },
+    ],
+  },
+  {
+    title: 'Mercado',
+    items: [
+      { to: '/mercado', label: 'Mercado', icon: IconGlobe },
+      { to: '/noticias', label: 'Noticias', icon: IconNews },
+      { to: '/alertas', label: 'Alertas', icon: IconBell },
+      { to: '/fuentes', label: 'Fuentes de datos', icon: IconInfo },
+    ],
+  },
+  {
+    items: [
+      { to: '/configuracion', label: 'Configuración', icon: IconSettings },
+    ],
+  },
 ];
 
 const TICKER_KINDS = ['oficial', 'blue', 'bolsa', 'contadoconliqui', 'cripto', 'tarjeta'] as const;
@@ -40,6 +73,7 @@ export default function App() {
   const { settings } = data;
   const live = useLive();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const location = useLocation();
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -51,16 +85,25 @@ export default function App() {
   }, [settings.theme]);
 
   return (
+    <LockGate>
+    <SyncManager onConflict={() => setConflict(true)} />
     <div className="app">
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
         <div className="brand"><img src={logo} alt="" />Mis Finanzas</div>
-        {NAV.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Icon />{label}
-          </NavLink>
-        ))}
+        <nav className="nav-scroll">
+          {NAV.map((g, i) => (
+            <div key={i} className="nav-group">
+              {g.title && <div className="nav-title">{g.title}</div>}
+              {g.items.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <Icon />{label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
         <div className="sidebar-foot">
-          Tus datos se guardan solo en este navegador. Hacé un backup desde Configuración.
+          Tus datos se guardan en este dispositivo. Activá la sincronización o hacé backups desde Configuración.
         </div>
       </aside>
 
@@ -88,6 +131,13 @@ export default function App() {
 
         <main className="content">
           {storageError && <div className="alert bad">{storageError}</div>}
+          {conflict && (
+            <div className="alert warn-box">
+              Este dispositivo y otro tenían cambios distintos: se usó la versión más reciente. La otra quedó guardada como copia en Configuración → Sincronización.{' '}
+              <button className="btn btn-sm" onClick={() => setConflict(false)}>Entendido</button>
+            </div>
+          )}
+          <BackupReminder />
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/movimientos" element={<Movimientos />} />
@@ -98,13 +148,18 @@ export default function App() {
             <Route path="/inversiones" element={<Inversiones />} />
             <Route path="/mercado" element={<Mercado />} />
             <Route path="/fuentes" element={<Fuentes />} />
+            <Route path="/patrimonio" element={<Patrimonio />} />
+            <Route path="/presupuesto" element={<Presupuesto />} />
+            <Route path="/alertas" element={<Alertas />} />
             <Route path="/noticias" element={<Noticias />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="*" element={<Dashboard />} />
           </Routes>
         </main>
       </div>
+      <Watcher />
       {menuOpen && <div className="modal-backdrop" style={{ zIndex: 30, background: 'rgb(0 0 0 / .3)' }} onClick={() => setMenuOpen(false)} />}
     </div>
+    </LockGate>
   );
 }

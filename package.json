@@ -8,14 +8,18 @@
     "build": "tsc --noEmit && vite build",
     "build:single": "tsc --noEmit && vite build --mode single",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-is": "^19.3.1",
     "react-router-dom": "^7.18.5",
     "recharts": "^3.10.1",
+    "tesseract.js": "^6.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
@@ -24,6 +28,7 @@
     "@vitejs/plugin-react": "^6.2.1",
     "typescript": "5.9",
     "vite": "^8.3.6",
-    "vite-plugin-singlefile": "^2.3.4"
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^4.1.12"
   }
 }

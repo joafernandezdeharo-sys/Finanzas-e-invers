@@ -7,9 +7,10 @@ import { IconEdit, IconPlus, IconTrash } from '../components/Icons';
 import { MoneyTooltip, useThemeColors } from '../components/charts';
 import { fetchDollarHistory, type DollarHistoryPoint } from '../services/dolar';
 import { BCRA_IDS, fetchBcraVariables, type BcraVariable } from '../services/bcra';
-import { DOLLAR_KINDS, dollarLabel } from '../lib/defaults';
+import { DOLLAR_KINDS, accountInfo, dollarLabel } from '../lib/defaults';
 import { formatDate, formatMoney, formatNumber, formatPct, sum, todayISO } from '../lib/util';
-import type { DollarKind, DollarOperation } from '../types';
+import type { DollarKind, DollarOperation, TxType } from '../types';
+import { INTERNAL_CATEGORY } from '../components/TxForm';
 
 const RANGES = [
   { value: '30', label: '1M' },
@@ -20,7 +21,10 @@ const RANGES = [
 ] as const;
 
 function OperationForm({ initial, onClose }: { initial?: DollarOperation; onClose: () => void }) {
-  const { add, update, data } = useStore();
+  const { add, update, data, setLinked } = useStore();
+  const accounts = data.settings.accounts;
+  const usdDefault = accounts.find((a) => accountInfo(a, data.settings.accountInfo).currency === 'USD') ?? '';
+  const arsDefault = accounts.find((a) => accountInfo(a, data.settings.accountInfo).kind === 'banco') ?? '';
   const live = useLive();
   const [f, setF] = useState({
     date: initial?.date ?? todayISO(),
@@ -29,6 +33,8 @@ function OperationForm({ initial, onClose }: { initial?: DollarOperation; onClos
     rate: initial?.rate ?? (null as number | null),
     kind: initial?.kind ?? data.settings.rateKind,
     note: initial?.note ?? '',
+    fromAccount: initial ? initial.fromAccount ?? '' : arsDefault,
+    toAccount: initial ? initial.toAccount ?? '' : usdDefault,
   });
   const [hint, setHint] = useState('');
 
@@ -56,8 +62,19 @@ function OperationForm({ initial, onClose }: { initial?: DollarOperation; onClos
   const valid = f.usdAmount && f.usdAmount > 0 && f.rate && f.rate > 0;
   const save = () => {
     if (!valid) return;
-    const op = { ...f, usdAmount: f.usdAmount!, rate: f.rate! };
-    if (initial) update('dollarOps', initial.id, op); else add('dollarOps', op);
+    const op = { ...f, usdAmount: f.usdAmount!, rate: f.rate!, fromAccount: f.fromAccount || undefined, toAccount: f.toAccount || undefined };
+    const id = initial ? initial.id : add('dollarOps', op);
+    if (initial) update('dollarOps', initial.id, op);
+    // movimientos entre cuentas: salen pesos de una y entran dólares en la otra (o al revés si vendiste)
+    const desc = `${f.operation === 'compra' ? 'Compra' : 'Venta'} de US$ ${f.usdAmount} a $ ${f.rate} (${dollarLabel(f.kind)})`;
+    const base = { date: f.date, category: INTERNAL_CATEGORY, description: desc, internal: true as const };
+    const ars = { ...base, amount: Math.round(f.usdAmount! * f.rate! * 100) / 100, currency: 'ARS' as const };
+    const usd = { ...base, amount: f.usdAmount!, currency: 'USD' as const };
+    const buy = f.operation === 'compra';
+    setLinked(id, [
+      ...(f.fromAccount ? [{ ...ars, type: (buy ? 'gasto' : 'ingreso') as TxType, account: f.fromAccount }] : []),
+      ...(f.toAccount ? [{ ...usd, type: (buy ? 'ingreso' : 'gasto') as TxType, account: f.toAccount }] : []),
+    ]);
     onClose();
   };
 
@@ -78,6 +95,18 @@ function OperationForm({ initial, onClose }: { initial?: DollarOperation; onClos
         </Field>
         {hint && <div className="full small muted">{hint}</div>}
         {valid && <div className="full alert">Total: <b className="num">{formatMoney(f.usdAmount! * f.rate!, 'ARS')}</b></div>}
+        <Field label={f.operation === 'compra' ? 'Los pesos salieron de' : 'Los pesos entraron en'} hint="Opcional: actualiza el saldo de tus cuentas">
+          <select className="select" value={f.fromAccount} onChange={(e) => setF({ ...f, fromAccount: e.target.value })}>
+            <option value="">— no registrar —</option>
+            {accounts.map((a) => <option key={a}>{a}</option>)}
+          </select>
+        </Field>
+        <Field label={f.operation === 'compra' ? 'Los dólares entraron en' : 'Los dólares salieron de'}>
+          <select className="select" value={f.toAccount} onChange={(e) => setF({ ...f, toAccount: e.target.value })}>
+            <option value="">— no registrar —</option>
+            {accounts.map((a) => <option key={a}>{a}</option>)}
+          </select>
+        </Field>
         <Field label="Nota" full><input className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Ej. aguinaldo, cueva, homebanking" /></Field>
         <button type="submit" hidden />
       </form>
