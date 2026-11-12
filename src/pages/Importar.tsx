@@ -5,12 +5,14 @@ import { useLive } from '../store/LiveData';
 import { Card, Empty, Field, PageHead, Segmented, Stat } from '../components/ui';
 import { IconDownload, IconTrash, IconUpload } from '../components/Icons';
 import { SOURCES } from '../lib/defaults';
-import { convert, downloadFile, formatDate, formatMoney, sum, todayISO } from '../lib/util';
+import { convert, formatDate, formatMoney, sum } from '../lib/util';
 import { readDocument, PasswordError, type RawDoc } from '../lib/importer/readers';
 import { analyze, type Analysis, type Mapping } from '../lib/importer/analyze';
 import { buildCandidates, categorize, type Candidate, type CandidateStatus } from '../lib/importer/finalize';
 import { detectSource, isCardSource, suggestAccount } from '../lib/importer/detect';
 import { descKey } from '../lib/importer/normalize';
+import { exportBackup } from '../components/BackupReminder';
+import { INTERNAL_CATEGORY } from '../components/TxForm';
 import type { CategoryRule, Currency, TxType } from '../types';
 
 interface Session {
@@ -26,9 +28,10 @@ interface Session {
   learned: Record<string, CategoryRule>; // descKey -> regla aprendida en esta sesión
 }
 
-const ACCEPT = '.csv,.txt,.xls,.xlsx,.xlsm,.ods,.pdf,.ofx,.qfx';
+const ACCEPT = '.csv,.txt,.xls,.xlsx,.xlsm,.ods,.pdf,.ofx,.qfx,.jpg,.jpeg,.png,.webp,image/*';
 
 const FORMAT_LABEL: Record<RawDoc['format'], string> = { csv: 'CSV', excel: 'Excel', pdf: 'PDF', ofx: 'OFX' };
+const formatLabel = (d: RawDoc) => (d.format === 'pdf' && d.ocr ? 'Imagen / PDF escaneado (texto reconocido por OCR: revisá montos y fechas)' : FORMAT_LABEL[d.format]);
 
 export default function Importar() {
   const { data, importBatch, removeImport, clearImports } = useStore();
@@ -38,6 +41,7 @@ export default function Importar() {
   const [queue, setQueue] = useState<File[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ msg: string; pct: number } | null>(null);
   const [error, setError] = useState('');
   const [needPassword, setNeedPassword] = useState<File | null>(null);
   const [password, setPassword] = useState('');
@@ -59,16 +63,19 @@ export default function Importar() {
       rules: [...Object.values(s.learned), ...settings.categoryRules],
       existing: transactions,
       fallback,
+      account: s.account,
+      userName: settings.userName,
+      internalCategory: INTERNAL_CATEGORY,
     });
     return { ...s, mapping: analysis.mapping, analysis, candidates };
-  }, [settings.categoryRules, transactions, fallback]);
+  }, [settings.categoryRules, settings.userName, transactions, fallback]);
 
   const open = useCallback(async (file: File, pwd?: string) => {
     setBusy(true);
     setError('');
     setDone('');
     try {
-      const doc = await readDocument(file, pwd);
+      const doc = await readDocument(file, pwd, (msg, pct) => setProgress({ msg, pct }));
       const source = detectSource(file.name, doc.text) ?? '';
       const first = analyze(doc, { defaultCurrency: 'ARS', sourceIsCard: isCardSource(source) });
       const base = {
@@ -93,6 +100,7 @@ export default function Importar() {
       }
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }, [rebuild, settings.accounts]);
 
@@ -124,7 +132,7 @@ export default function Importar() {
     let learned = session.learned;
     let candidates = session.candidates.map((c) => (c.key === key ? { ...c, ...patch } : c));
     if (patch.type && patch.type !== target.type) {
-      candidates = candidates.map((c) => (c.key === key ? { ...c, category: categorize(c.description, c.type, settings.categoryRules, fallback) } : c));
+      candidates = candidates.map((c) => (c.key === key && !c.internal ? { ...c, category: categorize(c.description, c.type, settings.categoryRules, fallback) } : c));
     }
     if (patch.category) {
       // aprendemos la categoría y la aplicamos a los movimientos con la misma descripción
@@ -144,8 +152,8 @@ export default function Importar() {
 
   const selected = session?.candidates.filter((c) => c.include) ?? [];
   const toARS = (n: number, cur: Currency) => convert(n, cur, 'ARS', live.rate || 1);
-  const selIn = sum(selected.filter((c) => c.type === 'ingreso').map((c) => toARS(c.amount, c.currency)));
-  const selOut = sum(selected.filter((c) => c.type === 'gasto').map((c) => toARS(c.amount, c.currency)));
+  const selIn = sum(selected.filter((c) => c.type === 'ingreso' && !c.internal).map((c) => toARS(c.amount, c.currency)));
+  const selOut = sum(selected.filter((c) => c.type === 'gasto' && !c.internal).map((c) => toARS(c.amount, c.currency)));
   const counts = (st: CandidateStatus) => session?.candidates.filter((c) => c.status === st).length ?? 0;
 
   const doImport = () => {
@@ -167,6 +175,7 @@ export default function Importar() {
       selected.map((c) => ({
         date: c.date, type: c.type, amount: c.amount, currency: c.currency, category: c.category,
         description: c.description, account: session.account, source,
+        internal: c.internal || undefined, installment: c.installment,
       })),
       remember ? Object.values(session.learned) : [],
     );
@@ -202,8 +211,9 @@ export default function Importar() {
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
         >
           <IconUpload width={32} height={32} />
-          <b>{busy ? 'Leyendo archivo…' : 'Tocá para elegir archivos o arrastralos acá'}</b>
-          <span className="small muted">PDF, Excel (XLS/XLSX), CSV u OFX · Mercado Pago, Ualá, Brubank, Naranja X, Galicia, Santander, BBVA, Macro, ICBC, Nación, Provincia y cualquier otro banco o tarjeta</span>
+          <b>{busy ? (progress?.msg ?? 'Leyendo archivo…') : 'Tocá para elegir archivos o arrastralos acá'}</b>
+          {busy && progress && progress.pct > 0 && <div className="progress" style={{ width: 240 }}><div style={{ width: `${progress.pct}%` }} /></div>}
+          <span className="small muted">PDF (también escaneados), Excel, CSV, OFX o una foto/captura del resumen · Mercado Pago, Ualá, Brubank, Naranja X, Galicia, Santander, BBVA, Macro, ICBC, Nación, Provincia y cualquier otro banco o tarjeta</span>
           <input ref={inputRef} type="file" accept={ACCEPT} multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }} />
         </div>
       )}
@@ -225,7 +235,7 @@ export default function Importar() {
       {session && (
         <Card
           title={`Revisar: ${session.file.name}`}
-          subtitle={<>{FORMAT_LABEL[session.analysis.format]} · {session.candidates.length} movimientos detectados{queue.length ? ` · ${queue.length} archivo(s) más en espera` : ''}</>}
+          subtitle={<>{formatLabel(session.doc)} · {session.candidates.length} movimientos detectados{queue.length ? ` · ${queue.length} archivo(s) más en espera` : ''}</>}
           actions={<>
             <button className="btn" onClick={next}>{queue.length ? 'Saltear' : 'Cancelar'}</button>
             <button className="btn btn-primary" onClick={doImport} disabled={!selected.length}>Importar {selected.length} movimientos</button>
@@ -242,7 +252,7 @@ export default function Importar() {
               </select>
             </Field>
             <Field label="Cuenta / medio de pago">
-              <select className="select" value={session.account} onChange={(e) => setSession({ ...session, account: e.target.value })}>
+              <select className="select" value={session.account} onChange={(e) => update({ account: e.target.value })}>
                 {[...new Set([...settings.accounts, ...(session.source ? [session.source] : [])])].map((a) => <option key={a}>{a}</option>)}
               </select>
             </Field>
@@ -324,7 +334,7 @@ export default function Importar() {
             <div className="table-wrap" style={{ maxHeight: 560, overflowY: 'auto' }}>
               <table>
                 <thead style={{ position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
-                  <tr><th /><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Categoría</th><th className="r">Monto</th></tr>
+                  <tr><th /><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Categoría</th><th className="r">Monto</th><th title="Movimiento entre tus cuentas: no cuenta como ingreso ni gasto">Entre cuentas</th></tr>
                 </thead>
                 <tbody>
                   {shown.map((c) => {
@@ -335,6 +345,7 @@ export default function Importar() {
                         <td className="num" style={{ whiteSpace: 'nowrap' }}>{formatDate(c.date)}</td>
                         <td>
                           {c.description}
+                          {c.installment && <span className="badge" style={{ marginLeft: 6 }}>Cuota {c.installment.n}/{c.installment.total}</span>}
                           {c.note && <div className={`small ${c.status === 'duplicado' ? 'warn' : 'muted'}`}>{c.note}</div>}
                         </td>
                         <td>
@@ -344,11 +355,19 @@ export default function Importar() {
                           </button>
                         </td>
                         <td>
-                          <select className="select" style={{ minWidth: 150 }} value={c.category} onChange={(e) => editCandidate(c.key, { category: e.target.value })}>
-                            {[...new Set([...cats, c.category])].map((x) => <option key={x}>{x}</option>)}
-                          </select>
+                          {c.internal ? <span className="muted small">Entre cuentas</span> : (
+                            <select className="select" style={{ minWidth: 150 }} value={c.category} onChange={(e) => editCandidate(c.key, { category: e.target.value })}>
+                              {[...new Set([...cats, c.category])].map((x) => <option key={x}>{x}</option>)}
+                            </select>
+                          )}
                         </td>
-                        <td className={`r ${c.type === 'ingreso' ? 'good' : ''}`} style={{ whiteSpace: 'nowrap' }}>{c.type === 'ingreso' ? '+' : '−'}{formatMoney(c.amount, c.currency)}</td>
+                        <td className={`r ${c.internal ? 'muted' : c.type === 'ingreso' ? 'good' : ''}`} style={{ whiteSpace: 'nowrap' }}>{c.type === 'ingreso' ? '+' : '−'}{formatMoney(c.amount, c.currency)}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <input type="checkbox" checked={c.internal} aria-label="Movimiento entre mis cuentas" onChange={(e) => editCandidate(c.key, {
+                            internal: e.target.checked,
+                            category: e.target.checked ? INTERNAL_CATEGORY : categorize(c.description, c.type, settings.categoryRules, fallback),
+                          })} />
+                        </td>
                       </tr>
                     );
                   })}
@@ -363,7 +382,7 @@ export default function Importar() {
         title="Historial de importaciones"
         subtitle={`${imports.length} archivos · ${importedCount} movimientos importados en memoria`}
         actions={imports.length > 0 && <>
-          <button className="btn btn-sm" onClick={() => downloadFile(`mis-finanzas-backup-${todayISO()}.json`, JSON.stringify(data, null, 2))}><IconDownload width={14} />Backup</button>
+          <button className="btn btn-sm" onClick={() => exportBackup(data)}><IconDownload width={14} />Backup</button>
           <button className="btn btn-sm btn-danger" onClick={() => {
             if (confirm(`¿Borrar la memoria de importaciones?\n\nSe eliminan los ${importedCount} movimientos importados y el historial de archivos. Los movimientos que cargaste a mano no se tocan.\n\nTe recomendamos exportar un backup antes.`)) clearImports();
           }}><IconTrash width={14} />Borrar memoria</button>

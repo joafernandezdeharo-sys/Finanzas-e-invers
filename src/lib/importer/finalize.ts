@@ -16,7 +16,33 @@ export interface Candidate {
   include: boolean;
   status: CandidateStatus;
   note?: string;
+  /** Transferencia entre cuentas propias (no cuenta como ingreso ni gasto) */
+  internal: boolean;
+  installment?: { n: number; total: number };
 }
+
+/** Descripciones típicas de movimientos entre cuentas propias */
+const INTERNAL_RE = new RegExp([
+  'pago (de )?(la )?(tarjeta|tc|t\\.c\\.|visa|master|mastercard|amex|american express|cabal|naranja|resumen)',
+  'cuenta propia', 'cuentas propias', 'mismo titular', 'misma titularidad', 'entre cuentas', 'transferencia propia',
+  'a mi cuenta', 'de mi cuenta', 'rescate (de )?fci', 'suscripcion (de )?fci', 'rescate fondo', 'suscripcion fondo',
+  'compra (de )?(dolares|moneda extranjera|u\\$s|usd|divisas)', 'venta (de )?(dolares|moneda extranjera|u\\$s|usd|divisas)',
+  'dinero (ingresado|retirado) (a|de|desde) (mercado pago|tu cuenta)', 'ingreso de dinero desde', 'retiro a (tu )?cuenta',
+  'carga (de saldo )?desde', 'transferencia entre',
+].join('|'));
+
+/** Detecta compras en cuotas: "C.03/06", "CUOTA 3 DE 6", "CTA 03/12"; en tarjetas también "FRAVEGA 03/06" */
+export function detectInstallment(description: string, isCard: boolean): { n: number; total: number } | undefined {
+  const d = description.toLowerCase();
+  let m = d.match(/\b(?:c|cuota|cuotas|cta|ctas)\.?\s*(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})\b/);
+  if (!m && isCard) m = d.match(/\s(\d{2})\/(\d{2})\s*$/);
+  if (!m) return undefined;
+  const n = +m[1], total = +m[2];
+  return n >= 1 && total >= 2 && total <= 48 && n <= total ? { n, total } : undefined;
+}
+
+const fold2 = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const daysApart = (a: string, b: string) => Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 86_400_000;
 
 /** Huella para detectar el mismo movimiento cargado dos veces */
 export const fingerprint = (t: { date: string; type: TxType; amount: number; currency: Currency; description: string }) =>
@@ -43,7 +69,10 @@ export function categorize(description: string, type: TxType, userRules: Categor
 
 export function buildCandidates(
   rows: ParsedRow[],
-  opts: { positiveIsExpense: boolean; rules: CategoryRule[]; existing: Transaction[]; fallback: { ingreso: string; gasto: string } },
+  opts: {
+    positiveIsExpense: boolean; rules: CategoryRule[]; existing: Transaction[]; fallback: { ingreso: string; gasto: string };
+    account?: string; userName?: string; internalCategory?: string;
+  },
 ): Candidate[] {
   // contamos cuántas veces existe cada huella, para permitir movimientos idénticos legítimos (dos cafés el mismo día)
   const existing = new Map<string, number>();
@@ -51,6 +80,14 @@ export function buildCandidates(
     const f = fingerprint(t);
     existing.set(f, (existing.get(f) ?? 0) + 1);
   }
+  // gastos fijos generados automáticamente: si el resumen trae el mismo pago, no lo duplicamos
+  const recurringPool = opts.existing.filter((t) => t.recurringId);
+  const usedRecurring = new Set<string>();
+  // movimientos de otras cuentas para encontrar la "otra punta" de una transferencia
+  const otherAccounts = opts.existing.filter((t) => opts.account && t.account !== opts.account);
+  const name = opts.userName ? fold2(opts.userName).trim() : '';
+  const nameParts = name.split(/\s+/).filter((w) => w.length > 2);
+
   const seen = new Map<string, number>();
   return rows.map((r, i) => {
     const signed = opts.positiveIsExpense ? -r.signed : r.signed;
@@ -60,15 +97,43 @@ export function buildCandidates(
     const f = fingerprint(base);
     const n = (seen.get(f) ?? 0) + 1;
     seen.set(f, n);
-    const dup = n <= (existing.get(f) ?? 0);
+    let dup = n <= (existing.get(f) ?? 0);
+    let note: string | undefined = dup ? 'Ya está cargado (importado antes)' : r.exclude;
+
+    if (!dup) {
+      const rec = recurringPool.find((t) => !usedRecurring.has(t.id) && t.type === type && t.currency === r.currency &&
+        Math.abs(t.amount - amount) <= Math.max(1, t.amount * 0.01) && daysApart(t.date, r.date) <= 6);
+      if (rec) {
+        usedRecurring.add(rec.id);
+        dup = true;
+        note = `Ya está cargado como gasto fijo ("${rec.description}")`;
+      }
+    }
+
+    // ¿es un movimiento entre cuentas propias?
+    const d = fold2(r.description);
+    let internalNote = r.internalHint;
+    if (!internalNote && INTERNAL_RE.test(d)) internalNote = 'Parece un movimiento entre tus cuentas';
+    if (!internalNote && nameParts.length >= 2 && /transf|envi|recib/.test(d) && nameParts.every((w) => d.includes(w))) {
+      internalNote = 'Transferencia a tu nombre: parece entre tus cuentas';
+    }
+    if (!internalNote) {
+      const other = otherAccounts.find((t) => t.type !== type && t.currency === r.currency &&
+        Math.abs(t.amount - amount) <= Math.max(1, amount * 0.005) && daysApart(t.date, r.date) <= 3);
+      if (other) internalNote = `Coincide con "${other.description || other.category}" en ${other.account}: parece un pase entre cuentas`;
+    }
+    const internal = !!internalNote;
+
     const status: CandidateStatus = dup ? 'duplicado' : r.exclude ? 'excluido' : 'nuevo';
     return {
       key: `${i}-${f}`,
       ...base,
-      category: categorize(r.description, type, opts.rules, opts.fallback),
+      category: internal ? (opts.internalCategory ?? 'Transferencia entre cuentas') : categorize(r.description, type, opts.rules, opts.fallback),
       include: status === 'nuevo',
       status,
-      note: dup ? 'Ya está cargado (importado antes)' : r.exclude,
+      note: note ?? internalNote,
+      internal,
+      installment: type === 'gasto' ? detectInstallment(r.description, !!r.isCard) : undefined,
     };
   });
 }

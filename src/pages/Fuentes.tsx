@@ -30,7 +30,7 @@ const SOURCES: Source[] = [
     id: 'yahoo', name: 'Yahoo Finance', kind: 'Mercado', url: 'https://finance.yahoo.com',
     uses: 'Fuente principal de inversiones: acciones argentinas y de EE.UU., CEDEARs, ADRs, criptomonedas, índices (Merval, S&P 500, Nasdaq…), oro, petróleo y gráficos históricos.',
     freq: 'En vivo (las bolsas pueden tener hasta 15–20 min de demora)',
-    note: 'Necesita el puente propio (ver abajo). Si no está conectado, la app usa automáticamente BYMA y CoinGecko.',
+    note: 'Yahoo no ofrece una API pública oficial: usamos la misma interfaz que usa su web. Es muy usada y confiable en la práctica, pero Yahoo puede cambiarla sin aviso; por eso hay respaldos automáticos (BYMA y CoinGecko). Necesita el puente propio (ver abajo).',
     test: async ({ yahoo }) => {
       if (!yahoo) throw new Error('Falta conectar el puente');
       return testYahooProxy(yahoo);
@@ -51,7 +51,7 @@ const SOURCES: Source[] = [
     id: 'byma', name: 'BYMA — Bolsas y Mercados Argentinos (vía data912)', kind: 'Mercado', url: 'https://www.byma.com.ar',
     uses: 'Bonos y obligaciones negociables (AL30, GD30, AL30D…). Respaldo de acciones y CEDEARs si Yahoo no responde.',
     freq: 'En vivo durante la rueda',
-    note: 'BYMA no ofrece una API pública gratuita para usar desde el navegador; data912 republica sus precios.',
+    note: 'BYMA no ofrece una API pública gratuita para usar desde el navegador; data912 (un servicio de terceros) republica sus precios.',
     test: async () => {
       const rows = await okJson('https://data912.com/live/arg_bonds');
       const al30 = (rows as { symbol: string; c: number }[]).find((r) => r.symbol === 'AL30');
@@ -62,7 +62,7 @@ const SOURCES: Source[] = [
     id: 'dolarapi', name: 'DolarAPI', kind: 'Agregador', url: 'https://dolarapi.com',
     uses: 'Dólar blue, MEP, contado con liqui, cripto y tarjeta en tiempo real.',
     freq: 'Cada pocos minutos',
-    note: 'El dólar blue es un mercado informal: no existe una fuente oficial. MEP y CCL surgen de operaciones con bonos en BYMA.',
+    note: 'Servicio de terceros. El dólar blue es un mercado informal: no existe una fuente oficial. MEP y CCL surgen de operaciones con bonos en BYMA.',
     test: async () => {
       const d = await okJson('https://dolarapi.com/v1/dolares/blue');
       return `Blue: $ ${d.venta}`;
@@ -231,6 +231,14 @@ export default function Fuentes() {
           )}
         </form>
         {proxyMsg && <div className={`alert ${proxyMsg.ok ? 'good' : 'bad'}`} style={{ marginTop: 10 }}>{proxyMsg.text}</div>}
+        <h3 style={{ marginTop: 18 }}>Opcional: sincronizar entre dispositivos</h3>
+        <p className="small" style={{ marginTop: 4 }}>El mismo puente puede guardar una copia <b>cifrada</b> de tus datos para tenerlos iguales en el celular y la compu. Hacelo una vez:</p>
+        <ol className="small steps">
+          <li>En Cloudflare, entrá a <b>Storage &amp; Databases → KV</b> (o <b>Workers KV</b>) → <b>Create</b> y creá un espacio llamado <code>mis-finanzas-sync</code>.</li>
+          <li>Volvé a tu Worker <code>yahoo-finanzas</code> → <b>Settings</b> → <b>Bindings</b> → <b>Add</b> → <b>KV namespace</b>. En <b>Variable name</b> poné <code>SYNC</code> (en mayúsculas), elegí <code>mis-finanzas-sync</code> y tocá <b>Deploy</b>.</li>
+          <li>Si ya habías pegado una versión anterior del código, volvé a pegar el código de arriba (botón “Copiar código”) y tocá <b>Deploy</b>.</li>
+          <li>En la app: <b>Configuración → Sincronizar entre dispositivos</b>, generá una frase secreta y activala. En tu otro dispositivo usá la misma frase.</li>
+        </ol>
         <p className="small muted" style={{ marginBottom: 0 }}>
           El plan gratuito de Cloudflare permite 100.000 consultas por día, muchísimo más de lo que usa la app. Si usás la app en varios dispositivos, pegá la misma dirección en cada uno (o pasala con el backup).
         </p>

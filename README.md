@@ -6,19 +6,26 @@ App web para manejar tus finanzas personales día a día: ingresos y gastos, aho
 
 | Sección | Qué hace |
 |---|---|
-| **Resumen** | Balance del mes, ahorro, valor de la cartera, dólares comprados, gráfico de ingresos vs. gastos (12 meses), mayores gastos, presupuesto mensual y metas. |
-| **Ingresos y gastos** | Tabla con filtros desplegables (mes, tipo, categoría, cuenta, moneda, búsqueda), orden por columna, gráfico por categoría y exportación a CSV. |
-| **Importar resúmenes** | Subí extractos y resúmenes de cualquier banco, billetera o tarjeta de Argentina (Mercado Pago, Ualá, Brubank, Naranja X, Galicia, Santander, BBVA, Macro, ICBC, Nación, Provincia, Visa, Mastercard, Amex y más) en **PDF, Excel, CSV u OFX**. Detecta solo las columnas, fechas, montos en pesos y dólares, el banco de origen y si es un resumen de tarjeta; categoriza automáticamente y omite movimientos repetidos. Muestra una vista previa para revisar antes de importar. |
-| **Historial** | Todo lo acumulado mes a mes y año a año: ingresos, gastos, balance, % de ahorro y en qué se fue la plata, con filtros por año y por banco/app. |
-| **Ahorro** | Metas de ahorro en ARS o USD con progreso, fecha límite y cuota mensual sugerida; aportes y retiros; evolución del ahorro acumulado. |
-| **Dólar** | Cotizaciones en vivo (oficial, blue, MEP, CCL, mayorista, cripto, tarjeta), histórico (1M a 5A), calculadora, y registro de tus compras y ventas con el precio que pagaste, precio promedio y ganancia/pérdida contra hoy. |
-| **Mercado** | Indicadores oficiales del BCRA (dólar A 3500, reservas, inflación, tasas, UVA, CER), riesgo país, índices, commodities y ADRs argentinos con gráficos históricos. |
-| **Fuentes de datos** | De dónde sale cada dato, con prueba en vivo de cada fuente y la guía para conectar Yahoo Finance. |
-| **Inversiones** | CEDEARs, acciones argentinas y de EE.UU., bonos/ONs, cripto, plazos fijos (con TNA), FCIs y otros. Precio en vivo, variación diaria, resultado por activo y total, distribución de la cartera. |
-| **Noticias** | Feed de noticias de economía y mercados (Ámbito, Infobae, La Nación, Google News…) con filtro por fuente y búsqueda. Podés agregar cualquier RSS. |
-| **Configuración** | Nombre, tema claro/oscuro, moneda de visualización, dólar usado para convertir, presupuesto, frecuencia de actualización, categorías, cuentas, fuentes de noticias, API keys, backup/importación JSON, datos de ejemplo. |
+| **Resumen** | Balance del mes, patrimonio neto, inversiones, dólares, fijos que faltan, cuotas del mes que viene, metas e ingresos vs. gastos de 12 meses. |
+| **Ingresos y gastos** | Tabla con filtros (mes, tipo, categoría, cuenta, moneda, origen, búsqueda), movimientos entre cuentas, cuotas, gráfico por categoría y exportación a CSV. |
+| **Importar resúmenes** | PDF (también escaneados), fotos/capturas, Excel, CSV u OFX de cualquier banco, billetera o tarjeta argentina. Detecta columnas, montos, moneda, banco, cuotas, pagos de tarjeta y pases entre cuentas propias; categoriza solo y no duplica. |
+| **Presupuesto y fijos** | Proyección de fin de mes, presupuesto por categoría con avisos al 90% y 100%, gastos/ingresos fijos que se cargan solos y cuotas comprometidas por mes. |
+| **Historial** | Mes a mes y año a año, con filtros por año y origen. |
+| **Patrimonio** | Saldo de cada cuenta (con ajuste al saldo real), dólares, inversiones y deuda de tarjetas en un solo número. |
+| **Ahorro** | Metas en ARS o USD con progreso y cuota mensual sugerida (lo apartado no se suma dos veces al patrimonio). |
+| **Dólar** | Cotizaciones en vivo, oficial del BCRA, histórico, calculadora y registro de compras/ventas vinculado a tus cuentas. |
+| **Inversiones** | Registro de operaciones (compras, ventas parciales, dividendos, comisiones), precio promedio, resultado realizado y no realizado, gráfico y precios en vivo. |
+| **Mercado** | Indicadores oficiales del BCRA, riesgo país, índices, commodities y ADRs argentinos. |
+| **Alertas** | Aviso cuando el dólar o una inversión llegan a un precio o se mueven un %, con notificaciones. |
+| **Fuentes de datos** | De dónde sale cada número, prueba en vivo de cada fuente y guía para conectar Yahoo y la sincronización. |
+| **Configuración** | Sincronización, bloqueo con PIN/huella, instalar como app, categorías, cuentas, reglas, noticias, backup. |
 
-En la barra superior podés cambiar en cualquier momento entre **pesos y dólares**: todos los montos se convierten con el tipo de dólar que elijas en Configuración.
+## Cómo se calculan los números
+
+- **Ingresos y gastos con el dólar de su fecha:** un gasto en dólares de marzo se pasa a pesos con el dólar de marzo (y al revés), usando el histórico del tipo de dólar elegido en Configuración. Los saldos y valores actuales se convierten con el dólar de hoy.
+- **Pesos de hoy:** el interruptor "Pesos de hoy" ajusta montos pasados por la inflación mensual oficial (INDEC, vía BCRA), para comparar meses en términos reales.
+- **Movimientos entre cuentas propias** (pagar la tarjeta, pasar a Mercado Pago, comprar dólares) mueven saldos pero no cuentan como ingreso ni gasto.
+- **Inversiones:** método de precio promedio ponderado; el costo en dólares de cada compra usa el dólar de su fecha, así el rendimiento en USD es real.
 
 ## Fuentes de datos
 
@@ -57,9 +64,13 @@ Sin el puente, la app funciona igual usando BYMA (vía data912) y CoinGecko.
 - **PDF con contraseña:** se pide la contraseña (suele ser el DNI) y se usa solo para leer el archivo.
 - Los archivos se procesan **en tu dispositivo**: no se suben a ningún servidor.
 
+## Sincronización entre dispositivos
+
+Opcional, usando el mismo puente de Cloudflare: los datos se cifran **en tu dispositivo** con una frase secreta (AES-256-GCM, clave derivada con PBKDF2) antes de subirse; en la nube solo queda contenido ilegible. Cada dispositivo usa la misma frase. Si dos dispositivos cambian algo a la vez, gana la versión más reciente y la otra queda guardada como copia. Configuración paso a paso en la sección *Fuentes de datos* de la app (hay que vincular un espacio Workers KV llamado `SYNC`).
+
 ## Privacidad
 
-Todos tus datos se guardan **solo en tu navegador** (localStorage). No hay servidor ni cuenta. Usá *Configuración → Exportar backup* para guardar una copia o pasar tus datos a otro dispositivo.
+Todos tus datos se guardan en tu navegador (localStorage). No hay servidor ni cuenta: la única copia fuera del dispositivo es la sincronización cifrada, si la activás. La app avisa si pasan más de 14 días sin backup ni sincronización. El bloqueo con PIN/huella evita que alguien que agarre tu dispositivo vea tus finanzas, pero no cifra los datos guardados en el navegador.
 
 ## Cómo usarla
 
@@ -70,7 +81,11 @@ npm install
 npm run dev       # modo desarrollo en http://localhost:5173
 npm run build     # genera la versión estática en dist/
 npm run preview   # sirve dist/ localmente
+npm test          # pruebas automáticas (vitest)
+npm run check     # tipos + pruebas
 ```
+
+Cada cambio en GitHub corre las pruebas y la compilación (`.github/workflows/ci.yml`); al actualizar `main`, se publica sola en GitHub Pages.
 
 **Versión en un solo archivo:** `npm run build:single` genera `dist-single/index.html` (copia en `MisFinanzas.html`), que se abre con doble clic sin instalar nada.
 
@@ -80,4 +95,4 @@ Para probarla rápido: *Configuración → Cargar datos de ejemplo*.
 
 ## Tecnologías
 
-React 19 + TypeScript + Vite, Recharts para gráficos, React Router.
+React 19 + TypeScript + Vite, Recharts (gráficos), React Router, SheetJS (Excel), PDF.js (PDF), Tesseract.js (OCR), Vitest (pruebas). App instalable (PWA) con service worker.

@@ -21,8 +21,11 @@ export interface OfxTx {
 
 export type RawDoc =
   | { format: 'csv' | 'excel'; rows: Cell[][]; text: string; sheets?: string[] }
-  | { format: 'pdf'; rows: Cell[][]; lines: PdfLine[]; text: string }
+  | { format: 'pdf'; rows: Cell[][]; lines: PdfLine[]; text: string; ocr?: boolean }
   | { format: 'ofx'; ofx: OfxTx[]; text: string };
+
+/** Avance de tareas largas (reconocimiento de texto): mensaje y porcentaje 0-100 */
+export type Progress = (msg: string, pct: number) => void;
 
 const ext = (name: string) => name.toLowerCase().split('.').pop() ?? '';
 
@@ -107,7 +110,7 @@ async function readExcel(file: File): Promise<{ rows: Cell[][]; sheets: string[]
 
 // ------------------------------------------------------------------ PDF
 
-async function readPdf(file: File, password?: string): Promise<{ lines: PdfLine[]; text: string }> {
+async function readPdf(file: File, password?: string, onProgress?: Progress): Promise<{ lines: PdfLine[]; text: string; ocr: boolean }> {
   const pdfjs = await import('pdfjs-dist');
   const { default: PdfWorker } = await import('pdfjs-dist/build/pdf.worker.min.mjs?worker&inline');
   if (!pdfjs.GlobalWorkerOptions.workerPort) pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
@@ -145,7 +148,70 @@ async function readPdf(file: File, password?: string): Promise<{ lines: PdfLine[
       lines.push({ page: p, y: r.y, cells: cells.filter((c) => c.text), text: cells.map((c) => c.text).join(' ') });
     }
   }
-  return { lines, text: lines.map((l) => l.text).join('\n') };
+  // casi sin texto: es un PDF escaneado (una imagen). Lo pasamos por OCR (máximo 10 páginas)
+  if (lines.filter((l) => l.cells.length).length < 3) {
+    const canvases: HTMLCanvasElement[] = [];
+    for (let p = 1; p <= Math.min(doc.numPages, 10); p++) {
+      onProgress?.(`Preparando la página ${p}…`, 0);
+      const page = await doc.getPage(p);
+      const viewport = page.getViewport({ scale: 2.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+      canvases.push(canvas);
+    }
+    const ocrLines = await ocrImages(canvases, onProgress);
+    return { lines: ocrLines, text: ocrLines.map((l) => l.text).join('\n'), ocr: true };
+  }
+  return { lines, text: lines.map((l) => l.text).join('\n'), ocr: false };
+}
+
+
+// ------------------------------------------------------------------ OCR (PDF escaneados y fotos)
+
+type OcrSource = HTMLCanvasElement | File;
+
+/**
+ * Reconoce el texto de imágenes con Tesseract (código abierto). Corre en el dispositivo: los archivos
+ * no se suben a ningún lado. La primera vez descarga el motor y el idioma español (~6 MB) desde jsDelivr.
+ */
+async function ocrImages(sources: OcrSource[], onProgress?: Progress): Promise<PdfLine[]> {
+  const { createWorker } = await import('tesseract.js');
+  let page = 0;
+  const worker = await createWorker('spa', 1, {
+    logger: (m: { status: string; progress: number }) => {
+      if (m.status === 'recognizing text') onProgress?.(`Leyendo el texto (página ${page + 1} de ${sources.length})…`, Math.round(((page + m.progress) / sources.length) * 100));
+      else if (/loading|initializ/.test(m.status)) onProgress?.('Preparando el reconocimiento de texto (la primera vez tarda un poco)…', 0);
+    },
+  });
+  const lines: PdfLine[] = [];
+  try {
+    for (page = 0; page < sources.length; page++) {
+      const { data } = await worker.recognize(sources[page], {}, { blocks: true });
+      for (const block of data.blocks ?? []) {
+        for (const para of block.paragraphs) {
+          for (const line of para.lines) {
+            const words = line.words.filter((w) => w.text.trim());
+            if (!words.length) continue;
+            const h = Math.max(1, line.bbox.y1 - line.bbox.y0);
+            // un hueco grande entre palabras separa columnas
+            const cells: PdfCell[] = [];
+            for (const w of words) {
+              const last = cells[cells.length - 1];
+              if (last && w.bbox.x0 - last.xEnd < h * 1.2) { last.text += ` ${w.text}`; last.xEnd = w.bbox.x1; }
+              else cells.push({ x: w.bbox.x0, xEnd: w.bbox.x1, text: w.text });
+            }
+            lines.push({ page: page + 1, y: -line.bbox.y0, cells, text: cells.map((c) => c.text).join(' ') });
+          }
+        }
+      }
+    }
+  } finally {
+    await worker.terminate();
+  }
+  // orden de lectura: por página y de arriba hacia abajo
+  return lines.sort((a, b) => a.page - b.page || b.y - a.y);
 }
 
 // ------------------------------------------------------------------ OFX / QFX
@@ -168,12 +234,18 @@ function parseOfx(text: string): OfxTx[] {
 
 export class PasswordError extends Error {}
 
-export async function readDocument(file: File, password?: string): Promise<RawDoc> {
+export const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'];
+
+export async function readDocument(file: File, password?: string, onProgress?: Progress): Promise<RawDoc> {
   const e = ext(file.name);
+  if (IMAGE_EXT.includes(e) || file.type.startsWith('image/')) {
+    const lines = await ocrImages([file], onProgress);
+    return { format: 'pdf', lines, text: lines.map((l) => l.text).join('\n'), rows: lines.map((l) => l.cells.map((c) => c.text)), ocr: true };
+  }
   if (e === 'pdf') {
     try {
-      const { lines, text } = await readPdf(file, password);
-      return { format: 'pdf', lines, text, rows: lines.map((l) => l.cells.map((c) => c.text)) };
+      const { lines, text, ocr } = await readPdf(file, password, onProgress);
+      return { format: 'pdf', lines, text, rows: lines.map((l) => l.cells.map((c) => c.text)), ocr };
     } catch (err) {
       if ((err as { name?: string }).name === 'PasswordException') throw new PasswordError('El PDF está protegido con contraseña');
       throw err;

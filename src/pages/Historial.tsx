@@ -5,6 +5,7 @@ import { useStore } from '../store/AppStore';
 import { useLive } from '../store/LiveData';
 import { Card, Empty, PageHead, Stat } from '../components/ui';
 import { IconDownload } from '../components/Icons';
+import { RealTermsToggle, useFlowNote } from '../components/RealTerms';
 import { Legend, MoneyTooltip, axisMoney, useThemeColors } from '../components/charts';
 import { addMonths, downloadFile, formatMoney, monthKey, monthLabel, sum, toCSV } from '../lib/util';
 
@@ -20,10 +21,11 @@ interface MonthRow {
 
 export default function Historial() {
   const { data } = useStore();
-  const { transactions, settings } = data;
-  const { toDisplay } = useLive();
+  const { transactions } = data;
+  const cur = data.settings.displayCurrency;
+  const { flow } = useLive();
+  const note = useFlowNote();
   const colors = useThemeColors();
-  const cur = settings.displayCurrency;
   const [year, setYear] = useState('');
   const [source, setSource] = useState('');
 
@@ -31,7 +33,7 @@ export default function Historial() {
   const years = useMemo(() => [...new Set(transactions.map((t) => t.date.slice(0, 4)))].sort().reverse(), [transactions]);
 
   const txs = useMemo(
-    () => transactions.filter((t) => (!year || t.date.startsWith(year)) && (!source || (t.source || MANUAL) === source)),
+    () => transactions.filter((t) => !t.internal && (!year || t.date.startsWith(year)) && (!source || (t.source || MANUAL) === source)),
     [transactions, year, source],
   );
 
@@ -43,17 +45,17 @@ export default function Historial() {
     return list.map((m) => {
       const mt = txs.filter((t) => monthKey(t.date) === m);
       const cats = new Map<string, number>();
-      mt.filter((t) => t.type === 'gasto').forEach((t) => cats.set(t.category, (cats.get(t.category) ?? 0) + toDisplay(t.amount, t.currency)));
+      mt.filter((t) => t.type === 'gasto').forEach((t) => cats.set(t.category, (cats.get(t.category) ?? 0) + flow(t.amount, t.currency, t.date)));
       const top = [...cats.entries()].sort((a, b) => b[1] - a[1])[0];
       return {
         month: m,
-        income: sum(mt.filter((t) => t.type === 'ingreso').map((t) => toDisplay(t.amount, t.currency))),
-        expense: sum(mt.filter((t) => t.type === 'gasto').map((t) => toDisplay(t.amount, t.currency))),
+        income: sum(mt.filter((t) => t.type === 'ingreso').map((t) => flow(t.amount, t.currency, t.date))),
+        expense: sum(mt.filter((t) => t.type === 'gasto').map((t) => flow(t.amount, t.currency, t.date))),
         count: mt.length,
         topCategory: top ? top[0] : '—',
       };
     });
-  }, [txs, toDisplay]);
+  }, [txs, flow]);
 
   const totalIn = sum(months.map((m) => m.income));
   const totalOut = sum(months.map((m) => m.expense));
@@ -67,9 +69,9 @@ export default function Historial() {
 
   const categories = useMemo(() => {
     const m = new Map<string, number>();
-    txs.filter((t) => t.type === 'gasto').forEach((t) => m.set(t.category, (m.get(t.category) ?? 0) + toDisplay(t.amount, t.currency)));
+    txs.filter((t) => t.type === 'gasto').forEach((t) => m.set(t.category, (m.get(t.category) ?? 0) + flow(t.amount, t.currency, t.date)));
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [txs, toDisplay]);
+  }, [txs, flow]);
 
   const exportCSV = () => {
     const rows = [['Mes', 'Ingresos', 'Gastos', 'Balance', 'Movimientos', 'Mayor gasto'],
@@ -90,6 +92,7 @@ export default function Historial() {
           <option value="">Todos los orígenes</option>
           {sources.map((s) => <option key={s}>{s}</option>)}
         </select>
+        <RealTermsToggle />
         <button className="btn" onClick={exportCSV} disabled={!months.length}><IconDownload width={16} />CSV</button>
       </PageHead>
 
@@ -105,7 +108,7 @@ export default function Historial() {
             <Stat label="Movimientos" value={String(txs.length)} sub={`${activeMonths} meses con datos · ${sources.length} orígenes`} />
           </div>
 
-          <Card title="Ingresos y gastos por mes" subtitle={`en ${cur}`} actions={<Legend items={[{ label: 'Ingresos', color: colors.series[0] }, { label: 'Gastos', color: colors.series[1] }]} />}>
+          <Card title="Ingresos y gastos por mes" subtitle={note} actions={<Legend items={[{ label: 'Ingresos', color: colors.series[0] }, { label: 'Gastos', color: colors.series[1] }]} />}>
             <div className="chart-box">
               <ResponsiveContainer>
                 <BarChart data={months.map((m) => ({ month: m.month, Ingresos: m.income, Gastos: m.expense }))} barGap={2} barCategoryGap="20%">
